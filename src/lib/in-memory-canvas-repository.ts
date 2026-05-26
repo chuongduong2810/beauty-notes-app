@@ -16,6 +16,7 @@ export class InMemoryCanvasRepository implements CanvasRepository {
   notes: NoteRow[] = [];
   insertCanvasCalls = 0;
   insertNoteCalls = 0;
+  deleteNotesCalls = 0;
 
   async listCanvases(userId: string): Promise<CanvasRow[]> {
     return this.canvases
@@ -55,5 +56,13 @@ export class InMemoryCanvasRepository implements CanvasRepository {
     };
     this.notes.push(row);
     return row;
+  }
+
+  async deleteNotes(ids: readonly string[]): Promise<NoteRow[]> {
+    this.deleteNotesCalls++;
+    const idSet = new Set(ids);
+    const deleted = this.notes.filter((n) => idSet.has(n.id));
+    this.notes = this.notes.filter((n) => !idSet.has(n.id));
+    return deleted;
   }
 }
