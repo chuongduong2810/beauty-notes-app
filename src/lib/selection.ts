@@ -12,3 +12,17 @@ export type Selection = ReadonlySet<string>;
 export function selectOne(_prev: Selection, id: string): Selection {
   return new Set([id]);
 }
+
+/**
+ * Toggle `id` in/out of the selection. Used for shift-click on a Note
+ * (desktop) and two-finger tap on a Note (tablet — PRD §5.4).
+ */
+export function toggleInSelection(prev: Selection, id: string): Selection {
+  const next = new Set(prev);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  return next;
+}
