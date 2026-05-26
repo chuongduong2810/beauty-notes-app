@@ -1,0 +1,7 @@
+# React Spring + `@react-spring/three` for Animation
+
+All animation — Note drag/resize/hover transitions, Camera pan/zoom/dolly (ADR-0004), depth-layer transitions, focus zoom, toolbar entries/exits — is implemented with React Spring, using `@react-spring/three` for the WebGL scene and the base `react-spring` package for the small DOM surface (toolbar, dropdown, toast).
+
+We chose this over Framer Motion (the more common React default) for three product-specific reasons. First, the brief explicitly asks for "smooth physics-based interactions" — that is React Spring's central design choice, not Framer Motion's. Second, ADR-0001 commits us to a pure-WebGL render path, so the overwhelming majority of animations target R3F meshes, and `@react-spring/three` is purpose-built for that (animated values flow straight into mesh props); Framer Motion 3D is a smaller side project at Framer with known R3F interop issues. Third, the non-WebGL UI surface is intentionally small, so the ergonomic loss of not using Framer Motion's higher-level orchestration primitives is acceptable.
+
+A future reader looking at the dependency list will see no Framer Motion and may try to add it for some UI-orchestration task. The deliberate constraint is *one animation engine, sourced from React Spring*; mixing the two creates two parallel mental models for the same job, doubles the bundle, and breaks shared concepts like spring physics tuning.
