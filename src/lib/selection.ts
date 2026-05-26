@@ -17,6 +17,13 @@ export function selectOne(_prev: Selection, id: string): Selection {
  * Toggle `id` in/out of the selection. Used for shift-click on a Note
  * (desktop) and two-finger tap on a Note (tablet — PRD §5.4).
  */
+/**
+ * Drop everything from the selection. Used for click/tap on empty Canvas.
+ */
+export function clearSelection(_prev: Selection): Selection {
+  return new Set();
+}
+
 export function toggleInSelection(prev: Selection, id: string): Selection {
   const next = new Set(prev);
   if (next.has(id)) {
