@@ -1,13 +1,14 @@
 import { supabase } from "./supabase";
 import { supabaseCanvasRepository } from "./supabase-canvas-repository";
 import { ensureInitialRoom } from "./ensure-initial-room";
-import type { Room, Surface } from "./room";
+import type { Room, Surface, Note } from "./room";
 import type { Session } from "@supabase/supabase-js";
 
 export type BootstrapRoomResult = {
   session: Session;
   room: Room;
   surfaces: Surface[];
+  notes: Note[];
 };
 
 /**
@@ -33,8 +34,11 @@ export function bootstrapSessionAndRoom(): Promise<BootstrapRoomResult> {
       session = data.session;
     }
     const repo = supabaseCanvasRepository(supabase);
-    const { room, surfaces } = await ensureInitialRoom(repo, session.user.id);
-    return { session, room, surfaces };
+    const { room, surfaces, notes } = await ensureInitialRoom(
+      repo,
+      session.user.id,
+    );
+    return { session, room, surfaces, notes };
   })();
   // If the bootstrap rejects, drop the cached promise so a manual retry
   // (or HMR reload) can try again instead of resolving to the same error.

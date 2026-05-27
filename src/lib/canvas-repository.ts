@@ -9,7 +9,7 @@
  * is a trivial cleanup, deliberately out of scope for issue #21.
  */
 
-import type { Room, Surface } from "./room";
+import type { Room, Surface, Note, NewNote } from "./room";
 
 export interface CanvasRepository {
   /** Insert a Room and seed its six Surfaces. */
@@ -26,4 +26,16 @@ export interface CanvasRepository {
     id: string,
     pose: { yaw: number; pitch: number; distance: number },
   ): Promise<Room>;
+
+  /** List every Note Pinned to any Surface of the Room, oldest first. */
+  listNotes(roomId: string): Promise<Note[]>;
+  /** Insert a Note Pinned at `(surface_id, u, v)`. */
+  insertNote(note: NewNote): Promise<Note>;
+  /** Re-Pin a Note to a (possibly different) Surface at `(u, v)`. */
+  updateNotePin(
+    id: string,
+    pin: { surface_id: string; u: number; v: number },
+  ): Promise<Note>;
+  /** Replace a Note's body text. Debounced commit from Focus editing. */
+  updateNoteBody(id: string, body: string): Promise<Note>;
 }
