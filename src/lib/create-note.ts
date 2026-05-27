@@ -1,8 +1,11 @@
 import type { CanvasRepository, NoteRow } from "./canvas-repository";
 import { DEFAULT_PALETTE_COLOR_ID } from "./palette";
 
-const DEFAULT_WIDTH = 240;
-const DEFAULT_HEIGHT = 160;
+// Default size for a freshly-created Note, in screen pixels at 1× zoom.
+// The PRD §5.3 resize range is ~120–800 px, so this sits a notch above
+// the floor — comfortably readable without dominating the viewport.
+const DEFAULT_WIDTH = 160;
+const DEFAULT_HEIGHT = 120;
 
 export type CreateNoteAtInput = {
   canvasId: string;

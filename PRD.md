@@ -82,7 +82,7 @@ From `CONTEXT.md`. Glossary terms are bolded.
 
 | Verb | Gesture | Notes |
 |---|---|---|
-| **Create** | Double-click empty Canvas (desktop) / double-tap empty Canvas (tablet) | New Note appears at the click position, immediately focused for editing. Defaults to `mid` depth, default Palette colour. |
+| **Create** | Double-click empty Canvas (desktop) / double-tap empty Canvas (tablet) | New Note appears at the click position, immediately focused for editing. Defaults to `mid` depth, default Palette colour, ~160×120 px. |
 | **Edit** | Double-click an existing Note | Enters edit mode via the invisible textarea overlay (ADR-0002). |
 | **Move** | Drag a Note (one-finger or mouse) | If part of a selection, all selected Notes move together. |
 | **Resize** | Drag a corner handle on the focused Note | Free aspect, ~120 px – 800 px in screen pixels at 1× zoom. Only one Note resizes at a time, even within a multi-selection. |
