@@ -26,11 +26,18 @@ export type Room = {
   width_m: number;
   depth_m: number;
   height_m: number;
+  /** Orbit camera state, persisted per Room (ADR-0009). */
   camera_yaw: number;
   camera_pitch: number;
+  camera_distance: number;
   created_at: string;
   updated_at: string;
 };
+
+/** Default orbit camera pose for a freshly-created Room. */
+export const DEFAULT_CAMERA_YAW = 0;
+export const DEFAULT_CAMERA_PITCH = Math.PI / 2; // horizontal, eye level
+export const DEFAULT_CAMERA_DISTANCE = 1.8;
 
 export type Surface = {
   id: string;

@@ -109,5 +109,20 @@ export function supabaseCanvasRepository(
       if (error) throw error;
       return (data ?? []) as Surface[];
     },
+
+    async updateRoomCamera(id, { yaw, pitch, distance }) {
+      const { data, error } = await supabase
+        .from("rooms")
+        .update({
+          camera_yaw: yaw,
+          camera_pitch: pitch,
+          camera_distance: distance,
+        })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Room;
+    },
   };
 }

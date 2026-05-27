@@ -69,4 +69,12 @@ export interface CanvasRepository {
   listRooms(userId: string): Promise<Room[]>;
   /** List the six Surfaces of a Room. */
   listSurfaces(roomId: string): Promise<Surface[]>;
+  /**
+   * Persist the orbit camera pose for a Room (ADR-0009). Called from a
+   * debounced save after the user stops rotating / zooming.
+   */
+  updateRoomCamera(
+    id: string,
+    pose: { yaw: number; pitch: number; distance: number },
+  ): Promise<Room>;
 }
