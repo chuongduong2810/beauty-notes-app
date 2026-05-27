@@ -9,6 +9,25 @@ import {
   type Note,
 } from "./lib/room";
 import { DEFAULT_NOTE_COLOR_ID } from "./lib/palette";
+import { DebouncedSaver } from "./lib/debounced-saver";
+import type { ScreenRect } from "./lib/project-note-rect";
+
+const NOTE_BODY_DEBOUNCE_MS = 500;
+
+// Module-scope debounced saver for Note bodies (ADR-0005). One channel
+// shared across all editing sessions; latest body wins.
+const bodySaver = new DebouncedSaver<{ noteId: string; body: string }>(
+  NOTE_BODY_DEBOUNCE_MS,
+  async ({ noteId, body }) => {
+    const repo = useAppStore.getState().repo;
+    if (!repo) return;
+    try {
+      await repo.updateNoteBody(noteId, body);
+    } catch (err) {
+      console.warn("updateNoteBody failed", err);
+    }
+  },
+);
 
 /**
  * Effective pin of a Note currently being dragged across Surfaces
@@ -46,6 +65,10 @@ type AppState = {
   focusedNoteId: string | null;
   beforeFocus: CameraPose | null;
 
+  /** Issue #18: invisible-textarea editing for the focused Note. */
+  editingNoteId: string | null;
+  editingRect: ScreenRect | null;
+
   setSession: (session: Session | null) => void;
   setRepo: (repo: CanvasRepository) => void;
   setRoom: (room: Room, surfaces: Surface[], notes: Note[]) => void;
@@ -57,7 +80,10 @@ type AppState = {
   endNoteDrag: () => Promise<void>;
 
   focusNote: (noteId: string, beforeFocus: CameraPose) => void;
-  unfocusNote: () => void;
+  unfocusNote: () => Promise<void>;
+
+  setEditingBody: (body: string) => void;
+  setEditingRect: (rect: ScreenRect | null) => void;
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -72,6 +98,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   drag: null,
   focusedNoteId: null,
   beforeFocus: null,
+
+  editingNoteId: null,
+  editingRect: null,
 
   setSession: (session) => set({ session }),
   setRepo: (repo) => set({ repo }),
@@ -148,6 +177,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   focusNote: (noteId, beforeFocus) =>
-    set({ focusedNoteId: noteId, beforeFocus }),
-  unfocusNote: () => set({ focusedNoteId: null }),
+    set({
+      focusedNoteId: noteId,
+      beforeFocus,
+      // Entering focus auto-activates the textarea (ADR-0002 + #18).
+      editingNoteId: noteId,
+    }),
+
+  unfocusNote: async () => {
+    // Flush any in-flight body edits so the latest text is persisted
+    // before the Camera animates away.
+    await bodySaver.flush();
+    set({
+      focusedNoteId: null,
+      editingNoteId: null,
+      editingRect: null,
+    });
+  },
+
+  setEditingBody: (body) => {
+    const id = get().editingNoteId;
+    if (!id) return;
+    // Mirror into local state immediately so the WebGL text reflects
+    // every keystroke within a frame.
+    set((s) => ({
+      notes: s.notes.map((n) => (n.id === id ? { ...n, body } : n)),
+    }));
+    bodySaver.push({ noteId: id, body });
+  },
+
+  setEditingRect: (rect) => set({ editingRect: rect }),
 }));

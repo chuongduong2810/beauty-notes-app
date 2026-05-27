@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -8,6 +8,8 @@ import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { useAppStore } from "./store";
 import { RoomScene } from "./components/RoomScene";
+import { NoteEditor } from "./components/NoteEditor";
+import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
 
@@ -210,19 +212,24 @@ export function App() {
 
   // Click-to-focus (issue #17). Snapshots the user's CURRENT orbit
   // pose first — `(controls.target, camera.position)` — so the un-focus
-  // animation has a real destination to return to. Without this
-  // snapshot, FocusDriver would lerp back to the focus pose itself
-  // and Escape would do nothing visible.
+  // animation has a real destination to return to.
+  //
+  // useCallback so the reference is stable across re-renders. Without
+  // this every keystroke in the editor cascades into a fresh `onClick`
+  // for every NoteMesh, defeating React.memo on NoteMesh.
   const focusNote = useAppStore((s) => s.focusNote);
-  const onNoteClick = (noteId: string) => {
-    const controls = orbitRef.current;
-    if (!controls) return;
-    const cam = controls.object;
-    focusNote(noteId, {
-      target: [controls.target.x, controls.target.y, controls.target.z],
-      position: [cam.position.x, cam.position.y, cam.position.z],
-    });
-  };
+  const onNoteClick = useCallback(
+    (noteId: string) => {
+      const controls = orbitRef.current;
+      if (!controls) return;
+      const cam = controls.object;
+      focusNote(noteId, {
+        target: [controls.target.x, controls.target.y, controls.target.z],
+        position: [cam.position.x, cam.position.y, cam.position.z],
+      });
+    },
+    [focusNote],
+  );
 
   return (
     <div style={{ position: "fixed", inset: 0, background: ROOM_BACKDROP }}>
@@ -249,6 +256,7 @@ export function App() {
           onChange={onCameraChange}
         />
         <FocusDriver orbitRef={orbitRef} />
+        <EditorRectPublisher />
         <hemisphereLight args={["#ffe7c4", "#5a4a36", 0.55]} />
         <directionalLight
           position={[1.8, 2.6, 2.2]}
@@ -267,6 +275,7 @@ export function App() {
           />
         )}
       </Canvas>
+      <NoteEditor />
     </div>
   );
 }
