@@ -135,7 +135,8 @@ export function RoomScene({
               <NoteMesh
                 key={n.id}
                 note={n}
-                surfaceSize={t.size}
+                surfaceWidthM={t.size[0]}
+                surfaceHeightM={t.size[1]}
                 onClick={onNoteClick}
               />
             ))}

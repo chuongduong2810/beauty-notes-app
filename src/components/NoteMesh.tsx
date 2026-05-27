@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { memo, useRef } from "react";
 import { Text } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import { paletteEntry } from "../lib/palette";
@@ -11,31 +11,32 @@ const TEXT_FONT_SIZE_M = 0.012;
 const DRAG_THRESHOLD_PX = 5;
 const GRAB_STANDOFF_M = 0.005; // 5 mm lift off the wall while held
 
+type Props = {
+  note: Note;
+  surfaceWidthM: number;
+  surfaceHeightM: number;
+  onClick: (noteId: string) => void;
+};
+
 /**
  * A single Note rendered Pinned at `(u, v)` inside its parent Surface
- * mesh (ADR-0010). Pointer interactions:
+ * mesh (ADR-0010). Wrapped in `memo` so re-rendering one Note's body
+ * (per keystroke during editing) doesn't re-mount all the other Notes.
  *
- * - **pointer-down + release without movement** → click → `focusNote`
- *   (handled at the App level; here we just call `onClick` with the id)
+ * Surface size is passed as primitives (not an array) so memo's
+ * shallow comparator sees them as stable across `RoomScene` renders.
+ *
+ * Pointer interactions:
+ * - **pointer-down + release without movement** → click → `onClick(id)`
  * - **pointer-down + significant movement** → drag → `beginNoteDrag`
- *   (the live raycast lives in `<RoomScene>` which has refs to all
- *   Surface meshes)
  */
-export function NoteMesh({
-  note,
-  surfaceSize,
-  onClick,
-}: {
-  note: Note;
-  surfaceSize: [number, number];
-  onClick: (noteId: string) => void;
-}) {
+function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
   const t = noteLocalTransform({
     u: note.u,
     v: note.v,
     width_cm: note.width_cm,
     height_cm: note.height_cm,
-    surface_size_m: surfaceSize,
+    surface_size_m: [surfaceWidthM, surfaceHeightM],
   });
   const color = paletteEntry(note.color_id).base;
   const beginNoteDrag = useAppStore((s) => s.beginNoteDrag);
@@ -81,17 +82,11 @@ export function NoteMesh({
     };
     if (st.pointerId === null) return;
     if (!st.dragStarted) {
-      // No drag — treat as a click → focus
       e.stopPropagation();
       onClick(note.id);
     }
-    // Drag-end (commit / spring-back) is handled by RoomScene's
-    // window-level pointer-up listener so it fires even if pointer
-    // capture lost the surface ray.
   };
 
-  // While dragging, lift the Note off the wall along its parent
-  // Surface's local +Z (1 mm becomes 5 mm).
   const z = isDragging ? GRAB_STANDOFF_M : t.position[2];
 
   return (
@@ -125,3 +120,5 @@ export function NoteMesh({
     </group>
   );
 }
+
+export const NoteMesh = memo(NoteMeshImpl);
