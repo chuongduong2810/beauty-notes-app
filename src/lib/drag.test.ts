@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyDragDelta } from "./drag";
+import { applyDragDelta, endDragUpdates } from "./drag";
 import type { NoteRow } from "./canvas-repository";
 
 const note = (id: string, x: number, y: number): NoteRow => ({
@@ -63,5 +63,29 @@ describe("applyDragDelta — multi-selection drag", () => {
     expect(result.find((n) => n.id === "a")).toMatchObject({ x: 10, y: 20 });
     expect(result.find((n) => n.id === "b")).toMatchObject({ x: 100, y: 200 });
     expect(result.find((n) => n.id === "c")).toMatchObject({ x: 51, y: 51 });
+  });
+});
+
+describe("endDragUpdates — derive the repo payload from a finished drag", () => {
+  it("returns only the moved Notes' final {id, x, y} — never the unmoved ones", () => {
+    const notes = [
+      note("a", 10, 20),
+      note("b", 100, 200),
+      note("c", 50, 50),
+    ];
+    const drag = {
+      selection: new Set(["a", "b"]),
+      leadId: "a",
+      dx: 3,
+      dy: 4,
+    };
+
+    const payload = endDragUpdates(notes, drag);
+
+    const byId = new Map(payload.map((u) => [u.id, u]));
+    expect(byId.get("a")).toEqual({ id: "a", x: 13, y: 24 });
+    expect(byId.get("b")).toEqual({ id: "b", x: 103, y: 204 });
+    expect(byId.has("c")).toBe(false);
+    expect(payload).toHaveLength(2);
   });
 });

@@ -14,16 +14,41 @@ export type DragDelta = {
  * delta — preserving their relative offsets. Notes outside the
  * selection are returned untouched.
  */
-export function applyDragDelta(
-  notes: readonly NoteRow[],
-  { selection, leadId, dx, dy }: DragDelta,
-): NoteRow[] {
+function movingIdsFor(delta: DragDelta): ReadonlySet<string> {
   // The lead Note always moves. If it's part of a multi-selection every
   // selected Note moves with it; otherwise only the lead moves (e.g. the
   // user grabbed a Note that wasn't part of the existing selection).
-  const movingIds =
-    selection.has(leadId) ? selection : new Set<string>([leadId]);
+  return delta.selection.has(delta.leadId)
+    ? delta.selection
+    : new Set<string>([delta.leadId]);
+}
+
+export function applyDragDelta(
+  notes: readonly NoteRow[],
+  delta: DragDelta,
+): NoteRow[] {
+  const movingIds = movingIdsFor(delta);
   return notes.map((n) =>
-    movingIds.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n,
+    movingIds.has(n.id)
+      ? { ...n, x: n.x + delta.dx, y: n.y + delta.dy }
+      : n,
   );
+}
+
+/**
+ * Derive the repo payload from a finished drag — the list of `{id, x, y}`
+ * to ship in one batched `updateNotePositions` call. Only the Notes that
+ * actually moved are included.
+ */
+export function endDragUpdates(
+  notes: readonly NoteRow[],
+  delta: DragDelta,
+): Array<{ id: string; x: number; y: number }> {
+  const movingIds = movingIdsFor(delta);
+  const updates: Array<{ id: string; x: number; y: number }> = [];
+  for (const n of notes) {
+    if (!movingIds.has(n.id)) continue;
+    updates.push({ id: n.id, x: n.x + delta.dx, y: n.y + delta.dy });
+  }
+  return updates;
 }
