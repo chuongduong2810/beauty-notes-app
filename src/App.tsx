@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { Spherical, Vector3 } from "three";
@@ -9,43 +9,120 @@ import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { useAppStore } from "./store";
 import { RoomScene } from "./components/RoomScene";
 import { DebouncedSaver } from "./lib/debounced-saver";
+import { focusPose } from "./lib/focus-pose";
 
 const ROOM_BACKDROP = "#0e0b16";
 
-// Orbit constraints (ADR-0009). Target sits at eye level near the Room's
-// centre; the camera rotates around it. minPolarAngle / maxPolarAngle keep
-// the camera between floor and ceiling. min/maxDistance keep it inside
-// the Room without clipping walls.
 const ORBIT_TARGET: [number, number, number] = [0, 1.5, 0];
 const ORBIT_MIN_DISTANCE = 0.4;
 const ORBIT_MAX_DISTANCE = 2.7;
-const ORBIT_MIN_POLAR_ANGLE = 0.17; // ≈ 10° from straight up — stops at ceiling
-const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17; // ≈ 10° from straight down — stops at floor
+const ORBIT_MIN_POLAR_ANGLE = 0.17;
+const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17;
 
-// Per ADR-0005: debounce camera saves to ~1 s of quiet so we don't spam
-// the API while the user is mid-rotate.
 const CAMERA_SAVE_DEBOUNCE_MS = 1000;
+/** Per-frame interpolation factor for focus-dolly easing. */
+const FOCUS_LERP = 0.12;
+/** Threshold under which we consider the focus animation "settled". */
+const FOCUS_SETTLED_EPS = 0.002;
 
 type CameraPose = { yaw: number; pitch: number; distance: number };
 
 /**
- * v2 entry point (ADR-0008). Bootstraps an anonymous session + Room +
- * Surfaces, then renders the Room interior. The camera is orbit-controlled
- * (ADR-0009) and its pose is debounce-persisted per Room.
+ * Per-frame helper inside <Canvas> that drives the focus transition
+ * (issue #17). When `focusedNoteId` is set, this component:
+ *  - disables OrbitControls so the user's drags don't fight the dolly
+ *  - lerps the Camera position + the OrbitControls target toward the
+ *    focus pose
+ *  - on un-focus, lerps both back to the snapshot stored in
+ *    `beforeFocus` and re-enables OrbitControls when settled
  */
+function FocusDriver({
+  orbitRef,
+}: {
+  orbitRef: React.MutableRefObject<OrbitControlsImpl | null>;
+}) {
+  const focusedNoteId = useAppStore((s) => s.focusedNoteId);
+  const beforeFocus = useAppStore((s) => s.beforeFocus);
+  const room = useAppStore((s) => s.currentRoom);
+  const surfaces = useAppStore((s) => s.surfaces);
+  const notes = useAppStore((s) => s.notes);
+  const { camera } = useThree();
+
+  // Disable orbit interaction the moment we enter focus mode; re-enable
+  // when the un-focus animation has settled.
+  useEffect(() => {
+    const c = orbitRef.current;
+    if (!c) return;
+    if (focusedNoteId) c.enabled = false;
+  }, [focusedNoteId, orbitRef]);
+
+  useFrame(() => {
+    const c = orbitRef.current;
+    if (!c || !room) return;
+
+    // Target pose: either the focus pose for the focused Note, or the
+    // user's pre-focus snapshot (if we just un-focused), or nothing.
+    let targetTarget: [number, number, number] | null = null;
+    let targetPos: [number, number, number] | null = null;
+
+    if (focusedNoteId) {
+      const note = notes.find((n) => n.id === focusedNoteId);
+      const surface = note
+        ? surfaces.find((s) => s.id === note.surface_id)
+        : null;
+      if (note && surface) {
+        const pose = focusPose(note, surface, room);
+        targetTarget = pose.target;
+        targetPos = pose.cameraPosition;
+      }
+    } else if (beforeFocus && !c.enabled) {
+      // Animating back to the user's previous orbit pose.
+      targetTarget = beforeFocus.target;
+      targetPos = beforeFocus.position;
+    }
+
+    if (!targetTarget || !targetPos) return;
+
+    const t = new Vector3(...targetTarget);
+    const p = new Vector3(...targetPos);
+
+    c.target.lerp(t, FOCUS_LERP);
+    camera.position.lerp(p, FOCUS_LERP);
+
+    const settled =
+      c.target.distanceTo(t) < FOCUS_SETTLED_EPS &&
+      camera.position.distanceTo(p) < FOCUS_SETTLED_EPS;
+
+    // When the un-focus animation has settled, re-enable orbit so the
+    // user can rotate / zoom again. Also clear the snapshot.
+    if (settled && !focusedNoteId && !c.enabled) {
+      c.target.copy(t);
+      camera.position.copy(p);
+      c.enabled = true;
+      c.update();
+      useAppStore.setState({ beforeFocus: null });
+    } else {
+      c.update();
+    }
+  });
+
+  return null;
+}
+
 export function App() {
   const ready = useAppStore((s) => s.ready);
   const room = useAppStore((s) => s.currentRoom);
   const surfaces = useAppStore((s) => s.surfaces);
   const notes = useAppStore((s) => s.notes);
   const repo = useAppStore((s) => s.repo);
+  const focusedNoteId = useAppStore((s) => s.focusedNoteId);
   const setSession = useAppStore((s) => s.setSession);
   const setRepo = useAppStore((s) => s.setRepo);
   const setRoom = useAppStore((s) => s.setRoom);
+  const unfocusNote = useAppStore((s) => s.unfocusNote);
 
   const orbitRef = useRef<OrbitControlsImpl | null>(null);
-  // The camera-save channel. Recreated whenever the repo or current Room
-  // changes so each Room saves to its own row.
+
   const cameraSaver = useMemo<DebouncedSaver<CameraPose> | null>(() => {
     if (!repo || !room) return null;
     return new DebouncedSaver(CAMERA_SAVE_DEBOUNCE_MS, async (pose) => {
@@ -57,8 +134,6 @@ export function App() {
     });
   }, [repo, room]);
 
-  // Flush a pending save when the saver is replaced or unmounted so we
-  // never lose a final camera pose.
   useEffect(() => {
     if (!cameraSaver) return;
     return () => {
@@ -81,9 +156,10 @@ export function App() {
     };
   }, [setSession, setRepo, setRoom]);
 
-  // Restore the persisted camera pose once the Room is loaded.
+  // Restore the persisted orbit pose once the Room is loaded — only
+  // while not focused, so we don't fight FocusDriver.
   useEffect(() => {
-    if (!ready || !room || !orbitRef.current) return;
+    if (!ready || !room || !orbitRef.current || focusedNoteId) return;
     const controls = orbitRef.current;
     const sph = new Spherical(
       room.camera_distance,
@@ -91,14 +167,35 @@ export function App() {
       room.camera_yaw,
     );
     const offset = new Vector3().setFromSpherical(sph);
-    const target = controls.target;
-    controls.object.position.copy(target).add(offset);
+    controls.object.position.copy(controls.target).add(offset);
     controls.update();
-  }, [ready, room?.id, room?.camera_yaw, room?.camera_pitch, room?.camera_distance]);
+  }, [
+    ready,
+    room?.id,
+    room?.camera_yaw,
+    room?.camera_pitch,
+    room?.camera_distance,
+    focusedNoteId,
+  ]);
+
+  // Escape exits focus.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && focusedNoteId) {
+        e.preventDefault();
+        unfocusNote();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusedNoteId, unfocusNote]);
 
   const onCameraChange = () => {
     const controls = orbitRef.current;
     if (!controls || !cameraSaver) return;
+    // Don't save while focus-driving the camera; that's not the user's
+    // intent and we'd clobber their real orbit pose.
+    if (focusedNoteId) return;
     const offset = new Vector3().subVectors(
       controls.object.position,
       controls.target,
@@ -111,11 +208,31 @@ export function App() {
     });
   };
 
+  // Click-to-focus (issue #17). Snapshots the user's CURRENT orbit
+  // pose first — `(controls.target, camera.position)` — so the un-focus
+  // animation has a real destination to return to. Without this
+  // snapshot, FocusDriver would lerp back to the focus pose itself
+  // and Escape would do nothing visible.
+  const focusNote = useAppStore((s) => s.focusNote);
+  const onNoteClick = (noteId: string) => {
+    const controls = orbitRef.current;
+    if (!controls) return;
+    const cam = controls.object;
+    focusNote(noteId, {
+      target: [controls.target.x, controls.target.y, controls.target.z],
+      position: [cam.position.x, cam.position.y, cam.position.z],
+    });
+  };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: ROOM_BACKDROP }}>
       <Canvas
         shadows
         camera={{ position: [0, 1.6, 1.8], fov: 60, near: 0.05, far: 50 }}
+        onPointerMissed={() => {
+          // Click on empty Canvas (no mesh hit) — exit focus if focused.
+          if (focusedNoteId) unfocusNote();
+        }}
       >
         <OrbitControls
           ref={orbitRef}
@@ -131,11 +248,8 @@ export function App() {
           zoomSpeed={0.8}
           onChange={onCameraChange}
         />
-        {/* Warm sky / cooler floor — gives floor + ceiling distinct tones so
-            corners read even with same-colour walls. */}
+        <FocusDriver orbitRef={orbitRef} />
         <hemisphereLight args={["#ffe7c4", "#5a4a36", 0.55]} />
-        {/* "Window" light from behind the camera shining onto wall_north +
-            wall_west + floor. */}
         <directionalLight
           position={[1.8, 2.6, 2.2]}
           intensity={0.95}
@@ -145,7 +259,12 @@ export function App() {
           shadow-mapSize-height={2048}
         />
         {ready && room && (
-          <RoomScene room={room} surfaces={surfaces} notes={notes} />
+          <RoomScene
+            room={room}
+            surfaces={surfaces}
+            notes={notes}
+            onNoteClick={onNoteClick}
+          />
         )}
       </Canvas>
     </div>
