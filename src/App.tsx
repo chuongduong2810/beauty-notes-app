@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { supabase } from "./lib/supabase";
 import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
-import { ensureInitialCanvas } from "./lib/ensure-initial-canvas";
+import { bootstrapSessionAndCanvas } from "./lib/bootstrap";
 import { useAppStore } from "./store";
 import { Note } from "./components/Note";
 import { CanvasFloor } from "./components/CanvasFloor";
@@ -23,23 +23,14 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-    const bootstrap = async () => {
-      const { data: { session: existing } } = await supabase.auth.getSession();
-      let session = existing;
-      if (!session) {
-        const { data, error } = await supabase.auth.signInAnonymously();
-        if (error) throw error;
-        session = data.session;
-      }
-      if (!session || cancelled) return;
-      setSession(session);
-      const repo = supabaseCanvasRepository(supabase);
-      setRepo(repo);
-      const { canvas, notes } = await ensureInitialCanvas(repo, session.user.id);
-      if (cancelled) return;
-      setCanvas(canvas, notes);
-    };
-    bootstrap().catch((err) => console.error("Bootstrap failed:", err));
+    bootstrapSessionAndCanvas()
+      .then(({ session, canvas, notes }) => {
+        if (cancelled) return;
+        setSession(session);
+        setRepo(supabaseCanvasRepository(supabase));
+        setCanvas(canvas, notes);
+      })
+      .catch((err) => console.error("Bootstrap failed:", err));
     return () => {
       cancelled = true;
     };
