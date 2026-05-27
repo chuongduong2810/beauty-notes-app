@@ -48,5 +48,16 @@ export function supabaseCanvasRepository(
       if (error) throw error;
       return data as NoteRow;
     },
+
+    async deleteNotes(ids) {
+      if (ids.length === 0) return [];
+      const { data, error } = await supabase
+        .from("notes")
+        .delete()
+        .in("id", ids as string[])
+        .select();
+      if (error) throw error;
+      return (data ?? []) as NoteRow[];
+    },
   };
 }
