@@ -9,6 +9,9 @@ import {
   DEFAULT_ROOM_WIDTH_M,
   DEFAULT_ROOM_DEPTH_M,
   DEFAULT_ROOM_HEIGHT_M,
+  DEFAULT_CAMERA_YAW,
+  DEFAULT_CAMERA_PITCH,
+  DEFAULT_CAMERA_DISTANCE,
   type Room,
   type Surface,
 } from "./room";
@@ -88,8 +91,9 @@ export class InMemoryCanvasRepository implements CanvasRepository {
       width_m: DEFAULT_ROOM_WIDTH_M,
       depth_m: DEFAULT_ROOM_DEPTH_M,
       height_m: DEFAULT_ROOM_HEIGHT_M,
-      camera_yaw: 0,
-      camera_pitch: 0,
+      camera_yaw: DEFAULT_CAMERA_YAW,
+      camera_pitch: DEFAULT_CAMERA_PITCH,
+      camera_distance: DEFAULT_CAMERA_DISTANCE,
       created_at: now,
       updated_at: now,
     };
@@ -114,6 +118,26 @@ export class InMemoryCanvasRepository implements CanvasRepository {
 
   async listSurfaces(roomId: string): Promise<Surface[]> {
     return this.surfaces.filter((s) => s.room_id === roomId);
+  }
+
+  async updateRoomCamera(
+    id: string,
+    pose: { yaw: number; pitch: number; distance: number },
+  ): Promise<Room> {
+    let updated: Room | null = null;
+    this.rooms = this.rooms.map((r) => {
+      if (r.id !== id) return r;
+      updated = {
+        ...r,
+        camera_yaw: pose.yaw,
+        camera_pitch: pose.pitch,
+        camera_distance: pose.distance,
+        updated_at: new Date().toISOString(),
+      };
+      return updated;
+    });
+    if (!updated) throw new Error(`updateRoomCamera: no Room with id ${id}`);
+    return updated;
   }
 
   async updateNotePositions(
