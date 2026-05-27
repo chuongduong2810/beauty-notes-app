@@ -59,5 +59,17 @@ export function supabaseCanvasRepository(
       if (error) throw error;
       return (data ?? []) as NoteRow[];
     },
+
+    async updateNotePositions(updates) {
+      if (updates.length === 0) return [];
+      // One SQL UPDATE on the server via RPC — see
+      // supabase/migrations/0002_update_note_positions.sql. RLS still
+      // applies because the function's WHERE filters on auth.uid().
+      const { data, error } = await supabase.rpc("update_note_positions", {
+        updates: updates as { id: string; x: number; y: number }[],
+      });
+      if (error) throw error;
+      return (data ?? []) as NoteRow[];
+    },
   };
 }
