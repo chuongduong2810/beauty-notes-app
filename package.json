@@ -1,8 +1,39 @@
 {
-  "devDependencies": {
-    "@ai-hero/sandcastle": "^0.5.12"
-  },
+  "name": "beauty-notes",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
   "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
     "sandcastle": "npx tsx .sandcastle/main.mts"
+  },
+  "dependencies": {
+    "@react-spring/three": "^9.7.5",
+    "@react-three/drei": "^9.114.0",
+    "@react-three/fiber": "^8.17.10",
+    "@supabase/supabase-js": "^2.45.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.169.0",
+    "troika-three-text": "^0.52.4",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@ai-hero/sandcastle": "^0.5.12",
+    "@testing-library/jest-dom": "^6.5.0",
+    "@testing-library/react": "^16.0.1",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.169.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.8",
+    "vitest": "^2.1.2"
   }
 }
