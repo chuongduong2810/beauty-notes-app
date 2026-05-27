@@ -29,7 +29,7 @@ A draggable sticky note Pinned to a Surface at `(u, v)`. The atomic unit of cont
 _Avoid_: Card, sticky, item, post-it
 
 **Camera** (v2):
-The User's first-person view from a fixed position inside a Room — roughly room centre, ~1.6 m above the floor. Verbs: rotate (yaw + pitch via click-drag) and focus-transition (animate to a Note, animate back). No translation outside of focus-transitions. Yaw + pitch are persisted per Room. (See ADR-0009.)
+The User's orbit-controlled view anchored to a look-at target near the Room's centre at eye level (`(0, 1.5, 0)`). Verbs: rotate (yaw + pitch via click-drag around the target), zoom (wheel — dolly toward / away from the target), and focus-transition (animate target + camera to a Note, animate back). Polar angle is clamped between the floor and ceiling; zoom is clamped between close inspection and "just inside the Room". Yaw + pitch + distance are persisted per Room. (See ADR-0009.)
 _Avoid_: Viewport, view, eye
 
 **Palette**:

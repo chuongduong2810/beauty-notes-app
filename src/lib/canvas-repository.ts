@@ -1,10 +1,14 @@
 /**
- * Abstract repository surface for Canvas + Note persistence.
+ * Abstract repository surface for Canvas + Note persistence (v1) and
+ * Room + Surface persistence (v2, ADR-0008). Implementations live next
+ * to this file: an in-memory one used in tests, and a Supabase-backed
+ * one wired up in main.
  *
- * Lets `ensureInitialCanvas` stay testable without depending on Supabase's
- * chainable query builder. Implementations live next to this file: an
- * in-memory one used in tests, and a Supabase-backed one wired up in main.
+ * The v1 Canvas/Note methods are kept until the "drop v1" issue lands
+ * (#21) so the v1 codepaths still compile during the transition.
  */
+
+import type { Room, Surface } from "./room";
 
 export type Depth = "back" | "mid" | "front";
 
@@ -57,4 +61,12 @@ export interface CanvasRepository {
   updateNotePositions(
     updates: ReadonlyArray<{ id: string; x: number; y: number }>,
   ): Promise<NoteRow[]>;
+
+  // --- v2 (ADR-0008 / ADR-0010): Room + Surface ----------------------
+  /** Insert a Room and seed its six Surfaces. */
+  insertRoom(owner_id: string, name: string): Promise<Room>;
+  /** List the User's Rooms, most-recently-updated first. */
+  listRooms(userId: string): Promise<Room[]>;
+  /** List the six Surfaces of a Room. */
+  listSurfaces(roomId: string): Promise<Surface[]>;
 }

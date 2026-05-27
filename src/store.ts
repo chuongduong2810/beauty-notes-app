@@ -5,6 +5,7 @@ import type {
   CanvasRow,
   NoteRow,
 } from "./lib/canvas-repository";
+import type { Room, Surface } from "./lib/room";
 import {
   selectOne as selectOneFn,
   toggleInSelection as toggleInSelectionFn,
@@ -32,9 +33,14 @@ type AppState = {
   ready: boolean;
   repo: CanvasRepository | null;
 
+  // v2 (issue #13): Room replaces Canvas as the spatial container.
+  currentRoom: Room | null;
+  surfaces: Surface[];
+
   setSession: (session: Session | null) => void;
   setCanvas: (canvas: CanvasRow, notes: NoteRow[]) => void;
   setRepo: (repo: CanvasRepository) => void;
+  setRoom: (room: Room, surfaces: Surface[]) => void;
 
   selectNote: (id: string, shift: boolean) => void;
   clearSelection: () => void;
@@ -69,11 +75,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   undoToast: null,
   ready: false,
   repo: null,
+  currentRoom: null,
+  surfaces: [],
 
   setSession: (session) => set({ session }),
   setCanvas: (canvas, notes) =>
     set({ currentCanvas: canvas, notes, ready: true }),
   setRepo: (repo) => set({ repo }),
+  setRoom: (room, surfaces) =>
+    set({ currentRoom: room, surfaces, ready: true }),
 
   selectNote: (id, shift) =>
     set((s) => ({
