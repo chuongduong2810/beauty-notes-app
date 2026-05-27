@@ -9,6 +9,8 @@ import {
   DEFAULT_CAMERA_DISTANCE,
   type Room,
   type Surface,
+  type Note,
+  type NewNote,
 } from "./room";
 
 /**
@@ -19,7 +21,9 @@ import {
 export class InMemoryCanvasRepository implements CanvasRepository {
   rooms: Room[] = [];
   surfaces: Surface[] = [];
+  notes: Note[] = [];
   insertRoomCalls = 0;
+  insertNoteCalls = 0;
 
   async insertRoom(owner_id: string, name: string): Promise<Room> {
     this.insertRoomCalls++;
@@ -58,6 +62,53 @@ export class InMemoryCanvasRepository implements CanvasRepository {
 
   async listSurfaces(roomId: string): Promise<Surface[]> {
     return this.surfaces.filter((s) => s.room_id === roomId);
+  }
+
+  async listNotes(roomId: string): Promise<Note[]> {
+    const surfaceIds = new Set(
+      this.surfaces.filter((s) => s.room_id === roomId).map((s) => s.id),
+    );
+    return this.notes
+      .filter((n) => surfaceIds.has(n.surface_id))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+
+  async insertNote(note: NewNote): Promise<Note> {
+    this.insertNoteCalls++;
+    const now = new Date().toISOString();
+    const row: Note = {
+      id: `note-${this.notes.length + 1}`,
+      ...note,
+      created_at: now,
+      updated_at: now,
+    };
+    this.notes.push(row);
+    return row;
+  }
+
+  async updateNotePin(
+    id: string,
+    pin: { surface_id: string; u: number; v: number },
+  ): Promise<Note> {
+    let updated: Note | null = null;
+    this.notes = this.notes.map((n) => {
+      if (n.id !== id) return n;
+      updated = { ...n, ...pin, updated_at: new Date().toISOString() };
+      return updated;
+    });
+    if (!updated) throw new Error(`updateNotePin: no Note with id ${id}`);
+    return updated;
+  }
+
+  async updateNoteBody(id: string, body: string): Promise<Note> {
+    let updated: Note | null = null;
+    this.notes = this.notes.map((n) => {
+      if (n.id !== id) return n;
+      updated = { ...n, body, updated_at: new Date().toISOString() };
+      return updated;
+    });
+    if (!updated) throw new Error(`updateNoteBody: no Note with id ${id}`);
+    return updated;
   }
 
   async updateRoomCamera(

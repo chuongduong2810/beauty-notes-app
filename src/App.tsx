@@ -37,6 +37,7 @@ export function App() {
   const ready = useAppStore((s) => s.ready);
   const room = useAppStore((s) => s.currentRoom);
   const surfaces = useAppStore((s) => s.surfaces);
+  const notes = useAppStore((s) => s.notes);
   const repo = useAppStore((s) => s.repo);
   const setSession = useAppStore((s) => s.setSession);
   const setRepo = useAppStore((s) => s.setRepo);
@@ -68,11 +69,11 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     bootstrapSessionAndRoom()
-      .then(({ session, room, surfaces }) => {
+      .then(({ session, room, surfaces, notes }) => {
         if (cancelled) return;
         setSession(session);
         setRepo(supabaseCanvasRepository(supabase));
-        setRoom(room, surfaces);
+        setRoom(room, surfaces, notes);
       })
       .catch((err) => console.error("Bootstrap failed:", err));
     return () => {
@@ -143,7 +144,9 @@ export function App() {
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
         />
-        {ready && room && <RoomScene room={room} surfaces={surfaces} />}
+        {ready && room && (
+          <RoomScene room={room} surfaces={surfaces} notes={notes} />
+        )}
       </Canvas>
     </div>
   );

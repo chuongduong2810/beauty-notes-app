@@ -39,3 +39,7 @@ coverage/
 # Supabase CLI local state (per-user, never committed)
 supabase/.temp/
 supabase/.branches/
+
+# Screenshots / scratch images
+*.png
+!public/**/*.png
