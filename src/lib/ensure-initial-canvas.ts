@@ -6,8 +6,10 @@ import type {
 import { DEFAULT_PALETTE_COLOR_ID } from "./palette";
 
 const SEED_NOTE_BODY = "Welcome to Beauty Notes";
-const SEED_NOTE_WIDTH = 240;
-const SEED_NOTE_HEIGHT = 160;
+// Matches the new-Note default in create-note.ts; the PRD §5.3 resize
+// range (~120–800 px) leaves plenty of room for the user to grow it.
+const SEED_NOTE_WIDTH = 160;
+const SEED_NOTE_HEIGHT = 120;
 
 /**
  * Idempotent first-run bootstrap. Called after anonymous sign-in.
