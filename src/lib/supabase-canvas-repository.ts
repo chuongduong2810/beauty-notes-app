@@ -5,6 +5,7 @@ import type {
   NewNote,
   NoteRow,
 } from "./canvas-repository";
+import { defaultSurfaces, type Room, type Surface } from "./room";
 
 export function supabaseCanvasRepository(
   supabase: SupabaseClient,
@@ -70,6 +71,43 @@ export function supabaseCanvasRepository(
       });
       if (error) throw error;
       return (data ?? []) as NoteRow[];
+    },
+
+    async insertRoom(owner_id, name) {
+      const { data: room, error: roomErr } = await supabase
+        .from("rooms")
+        .insert({ owner_id, name })
+        .select()
+        .single();
+      if (roomErr) throw roomErr;
+      const seed = defaultSurfaces().map((s) => ({
+        room_id: (room as Room).id,
+        owner_id,
+        kind: s.kind,
+        color_id: s.color_id,
+      }));
+      const { error: surfErr } = await supabase.from("surfaces").insert(seed);
+      if (surfErr) throw surfErr;
+      return room as Room;
+    },
+
+    async listRooms(userId) {
+      const { data, error } = await supabase
+        .from("rooms")
+        .select("*")
+        .eq("owner_id", userId)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as Room[];
+    },
+
+    async listSurfaces(roomId) {
+      const { data, error } = await supabase
+        .from("surfaces")
+        .select("*")
+        .eq("room_id", roomId);
+      if (error) throw error;
+      return (data ?? []) as Surface[];
     },
   };
 }

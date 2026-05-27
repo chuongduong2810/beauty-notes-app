@@ -35,3 +35,7 @@ coverage/
 # Local caches
 .cache/
 .turbo/
+
+# Supabase CLI local state (per-user, never committed)
+supabase/.temp/
+supabase/.branches/
