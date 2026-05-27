@@ -31,3 +31,37 @@ describe("applyDragDelta — single Note drag", () => {
     expect(result.find((n) => n.id === "b")).toMatchObject({ x: 100, y: 200 });
   });
 });
+
+describe("applyDragDelta — multi-selection drag", () => {
+  it("moves every selected Note by the same delta, preserving relative offsets", () => {
+    const notes = [
+      note("a", 10, 20),
+      note("b", 100, 200),
+      note("c", 50, 50),
+    ];
+    const result = applyDragDelta(notes, {
+      selection: new Set(["a", "b"]),
+      leadId: "a",
+      dx: 3,
+      dy: 4,
+    });
+
+    expect(result.find((n) => n.id === "a")).toMatchObject({ x: 13, y: 24 });
+    expect(result.find((n) => n.id === "b")).toMatchObject({ x: 103, y: 204 });
+    expect(result.find((n) => n.id === "c")).toMatchObject({ x: 50, y: 50 });
+  });
+
+  it("when the lead Note is outside the existing selection, only the lead moves", () => {
+    const notes = [note("a", 10, 20), note("b", 100, 200), note("c", 50, 50)];
+    const result = applyDragDelta(notes, {
+      selection: new Set(["a", "b"]),
+      leadId: "c",
+      dx: 1,
+      dy: 1,
+    });
+
+    expect(result.find((n) => n.id === "a")).toMatchObject({ x: 10, y: 20 });
+    expect(result.find((n) => n.id === "b")).toMatchObject({ x: 100, y: 200 });
+    expect(result.find((n) => n.id === "c")).toMatchObject({ x: 51, y: 51 });
+  });
+});

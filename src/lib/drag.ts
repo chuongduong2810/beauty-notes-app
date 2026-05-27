@@ -16,9 +16,14 @@ export type DragDelta = {
  */
 export function applyDragDelta(
   notes: readonly NoteRow[],
-  { leadId, dx, dy }: DragDelta,
+  { selection, leadId, dx, dy }: DragDelta,
 ): NoteRow[] {
+  // The lead Note always moves. If it's part of a multi-selection every
+  // selected Note moves with it; otherwise only the lead moves (e.g. the
+  // user grabbed a Note that wasn't part of the existing selection).
+  const movingIds =
+    selection.has(leadId) ? selection : new Set<string>([leadId]);
   return notes.map((n) =>
-    n.id === leadId ? { ...n, x: n.x + dx, y: n.y + dy } : n,
+    movingIds.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n,
   );
 }
