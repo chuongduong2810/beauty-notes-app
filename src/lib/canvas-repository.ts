@@ -43,4 +43,10 @@ export interface CanvasRepository {
   insertCanvas(owner_id: string, name: string): Promise<CanvasRow>;
   listNotes(canvas_id: string): Promise<NoteRow[]>;
   insertNote(note: NewNote): Promise<NoteRow>;
+  /**
+   * Delete every Note whose id is in `ids` in a single batched operation.
+   * Returns the deleted rows so callers (e.g. the undo stack) can restore
+   * them.
+   */
+  deleteNotes(ids: readonly string[]): Promise<NoteRow[]>;
 }

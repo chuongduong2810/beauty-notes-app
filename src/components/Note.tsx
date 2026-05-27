@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { Text } from "@react-three/drei";
+import type { ThreeEvent } from "@react-three/fiber";
 import type { NoteRow } from "../lib/canvas-repository";
 import { paletteEntry } from "../lib/palette";
+import { useAppStore } from "../store";
 
 const DEPTH_Z: Record<NoteRow["depth"], number> = {
   back: -80,
@@ -9,18 +11,31 @@ const DEPTH_Z: Record<NoteRow["depth"], number> = {
   front: 80,
 };
 
-// World units per screen pixel at 1× zoom (rough — see PRD §5.3).
 const PX_TO_UNITS = 1;
 const TEXT_PAD = 16;
+const SELECTED_OUTLINE_COLOR = "#ffd5e8";
 
 export function Note({ note }: { note: NoteRow }) {
   const entry = useMemo(() => paletteEntry(note.color_id), [note.color_id]);
   const width = note.width * PX_TO_UNITS;
   const height = note.height * PX_TO_UNITS;
+  const selected = useAppStore((s) => s.selection.has(note.id));
+  const selectNote = useAppStore((s) => s.selectNote);
+
+  const onClick = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation();
+    selectNote(note.id, e.shiftKey);
+  };
 
   return (
     <group position={[note.x, note.y, DEPTH_Z[note.depth]]}>
-      <mesh>
+      {selected && (
+        <mesh position={[0, 0, -0.05]}>
+          <planeGeometry args={[width + 8, height + 8]} />
+          <meshBasicMaterial color={SELECTED_OUTLINE_COLOR} transparent opacity={0.6} />
+        </mesh>
+      )}
+      <mesh onClick={onClick}>
         <planeGeometry args={[width, height]} />
         <meshStandardMaterial
           color={entry.base}
