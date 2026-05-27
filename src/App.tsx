@@ -2,9 +2,9 @@ import { useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { supabase } from "./lib/supabase";
 import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
-import { ensureInitialCanvas } from "./lib/ensure-initial-canvas";
-import { useAppStore } from "./store";
-import { Note } from "./components/Note";
+import { bootstrapSessionAndCanvas } from "./lib/bootstrap";
+import { useAppStore, flushPendingPositionUpdates } from "./store";
+import { DraggableNote } from "./components/DraggableNote";
 import { CanvasFloor } from "./components/CanvasFloor";
 import { UndoToast } from "./components/UndoToast";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
@@ -22,24 +22,21 @@ export function App() {
   useGlobalShortcuts();
 
   useEffect(() => {
+    const onOnline = () => void flushPendingPositionUpdates();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
-    const bootstrap = async () => {
-      const { data: { session: existing } } = await supabase.auth.getSession();
-      let session = existing;
-      if (!session) {
-        const { data, error } = await supabase.auth.signInAnonymously();
-        if (error) throw error;
-        session = data.session;
-      }
-      if (!session || cancelled) return;
-      setSession(session);
-      const repo = supabaseCanvasRepository(supabase);
-      setRepo(repo);
-      const { canvas, notes } = await ensureInitialCanvas(repo, session.user.id);
-      if (cancelled) return;
-      setCanvas(canvas, notes);
-    };
-    bootstrap().catch((err) => console.error("Bootstrap failed:", err));
+    bootstrapSessionAndCanvas()
+      .then(({ session, canvas, notes }) => {
+        if (cancelled) return;
+        setSession(session);
+        setRepo(supabaseCanvasRepository(supabase));
+        setCanvas(canvas, notes);
+      })
+      .catch((err) => console.error("Bootstrap failed:", err));
     return () => {
       cancelled = true;
     };
@@ -51,7 +48,7 @@ export function App() {
         <ambientLight intensity={0.6} />
         <directionalLight position={[100, 200, 300]} intensity={0.7} />
         <CanvasFloor />
-        {ready && notes.map((n) => <Note key={n.id} note={n} />)}
+        {ready && notes.map((n) => <DraggableNote key={n.id} note={n} />)}
       </Canvas>
       <UndoToast />
     </div>

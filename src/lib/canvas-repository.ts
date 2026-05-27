@@ -49,4 +49,12 @@ export interface CanvasRepository {
    * them.
    */
   deleteNotes(ids: readonly string[]): Promise<NoteRow[]>;
+  /**
+   * Commit a batch of `{ id, x, y }` position updates in a single
+   * round-trip. Returns the updated rows (order is the database's, not
+   * necessarily the input order — index by id, not by position).
+   */
+  updateNotePositions(
+    updates: ReadonlyArray<{ id: string; x: number; y: number }>,
+  ): Promise<NoteRow[]>;
 }
