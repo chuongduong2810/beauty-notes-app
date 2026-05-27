@@ -3,8 +3,8 @@ import { Canvas } from "@react-three/fiber";
 import { supabase } from "./lib/supabase";
 import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
 import { bootstrapSessionAndCanvas } from "./lib/bootstrap";
-import { useAppStore } from "./store";
-import { Note } from "./components/Note";
+import { useAppStore, flushPendingPositionUpdates } from "./store";
+import { DraggableNote } from "./components/DraggableNote";
 import { CanvasFloor } from "./components/CanvasFloor";
 import { UndoToast } from "./components/UndoToast";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
@@ -20,6 +20,12 @@ export function App() {
   const setRepo = useAppStore((s) => s.setRepo);
 
   useGlobalShortcuts();
+
+  useEffect(() => {
+    const onOnline = () => void flushPendingPositionUpdates();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,7 +48,7 @@ export function App() {
         <ambientLight intensity={0.6} />
         <directionalLight position={[100, 200, 300]} intensity={0.7} />
         <CanvasFloor />
-        {ready && notes.map((n) => <Note key={n.id} note={n} />)}
+        {ready && notes.map((n) => <DraggableNote key={n.id} note={n} />)}
       </Canvas>
       <UndoToast />
     </div>

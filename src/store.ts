@@ -13,6 +13,7 @@ import {
 } from "./lib/selection";
 import { createNoteAt as createNoteAtFn } from "./lib/create-note";
 import { DeleteUndoStack } from "./lib/delete-undo-stack";
+import { endDragUpdates, type DragDelta } from "./lib/drag";
 
 const undoStack = new DeleteUndoStack();
 
@@ -26,6 +27,7 @@ type AppState = {
   currentCanvas: CanvasRow | null;
   notes: NoteRow[];
   selection: Selection;
+  drag: DragDelta | null;
   undoToast: ToastState | null;
   ready: boolean;
   repo: CanvasRepository | null;
@@ -41,15 +43,29 @@ type AppState = {
   deleteSelection: () => Promise<void>;
   undoLastDelete: () => Promise<void>;
   dismissUndoToast: () => void;
+
+  beginDrag: (leadId: string) => void;
+  updateDrag: (dx: number, dy: number) => void;
+  endDrag: () => Promise<void>;
 };
 
 const TOAST_LIFETIME_MS = 5000;
+
+// Pending updateNotePositions calls that failed because the network was
+// offline at drag-end. Flushed by the `online` event listener installed
+// in App.tsx — see useGlobalShortcuts (well, App.tsx).
+const pendingPositionUpdates: Array<{ id: string; x: number; y: number }> = [];
+
+export function getPendingPositionUpdates() {
+  return pendingPositionUpdates;
+}
 
 export const useAppStore = create<AppState>((set, get) => ({
   session: null,
   currentCanvas: null,
   notes: [],
   selection: new Set<string>(),
+  drag: null,
   undoToast: null,
   ready: false,
   repo: null,
@@ -120,4 +136,70 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   dismissUndoToast: () => set({ undoToast: null }),
+
+  beginDrag: (leadId) =>
+    set((s) => {
+      // Grabbing a Note outside the existing selection auto-selects just
+      // it — matches the typical desktop interaction model and keeps the
+      // selected ring + drag in sync.
+      const selection = s.selection.has(leadId)
+        ? s.selection
+        : new Set<string>([leadId]);
+      return {
+        drag: { selection, leadId, dx: 0, dy: 0 },
+        selection,
+      };
+    }),
+
+  updateDrag: (dx, dy) =>
+    set((s) => (s.drag ? { drag: { ...s.drag, dx, dy } } : {})),
+
+  endDrag: async () => {
+    const { drag, notes, repo } = get();
+    if (!drag) return;
+    const updates = endDragUpdates(notes, drag);
+    if (updates.length === 0) {
+      set({ drag: null });
+      return;
+    }
+    // Optimistic: commit the final positions to local state first so the
+    // UI never visibly snaps back, even if the network is slow / down.
+    const byId = new Map(updates.map((u) => [u.id, u]));
+    set({
+      notes: notes.map((n) => {
+        const u = byId.get(n.id);
+        return u ? { ...n, x: u.x, y: u.y } : n;
+      }),
+      drag: null,
+    });
+    if (!repo) return;
+    try {
+      await repo.updateNotePositions(updates);
+    } catch (err) {
+      console.warn("updateNotePositions failed; queued for retry on `online`", err);
+      pendingPositionUpdates.push(...updates);
+    }
+  },
 }));
+
+/**
+ * Flush position updates that were queued because the network was offline
+ * at drag-end. Installed once from App.tsx.
+ */
+export async function flushPendingPositionUpdates(): Promise<void> {
+  if (pendingPositionUpdates.length === 0) return;
+  const { repo } = useAppStore.getState();
+  if (!repo) return;
+  // Collapse multiple updates to the same id — only the most recent
+  // (x, y) matters.
+  const byId = new Map<string, { id: string; x: number; y: number }>();
+  for (const u of pendingPositionUpdates) byId.set(u.id, u);
+  const batch = [...byId.values()];
+  pendingPositionUpdates.length = 0;
+  try {
+    await repo.updateNotePositions(batch);
+  } catch (err) {
+    console.warn("retry of pending position updates failed", err);
+    pendingPositionUpdates.push(...batch);
+  }
+}
