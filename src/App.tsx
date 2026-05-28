@@ -251,18 +251,26 @@ export function App() {
   // Lock the orbit camera while a Pen Stroke is actively being drawn
   // (#35 follow-up): the user is committing to a continuous gesture on
   // a wall, so a stray drag-orbit mid-stroke would corrupt the polyline.
-  // Re-enabled on commit/cancel via the same effect.
+  //
+  // CRITICAL: FocusDriver owns `controls.enabled` both during focus
+  // entry AND during the lerp-back to `beforeFocus` on exit. If this
+  // effect re-enables orbit the moment `focusedNoteId` clears, the
+  // unfocus animation is abandoned mid-flight (FocusDriver's useFrame
+  // gates on `!c.enabled`). So we ALSO bail out while `beforeFocus`
+  // is still set — that's the "animating back to user's pre-focus
+  // pose" window. Only once FocusDriver clears beforeFocus do we
+  // resume applying the stroke-lock logic.
   const drawingStroke = useAppStore(
     (s) => s.penState.inProgressStroke !== null,
   );
   const inPenMode = useAppStore((s) => s.penState.currentTool === "pen");
+  const beforeFocus = useAppStore((s) => s.beforeFocus);
   useEffect(() => {
     const c = orbitRef.current;
     if (!c) return;
-    // Focus mode already owns `enabled` while focused, so don't fight it.
-    if (focusedNoteId) return;
+    if (focusedNoteId || beforeFocus) return;
     c.enabled = !drawingStroke;
-  }, [drawingStroke, focusedNoteId]);
+  }, [drawingStroke, focusedNoteId, beforeFocus]);
 
   // Escape exits focus.
   useEffect(() => {
