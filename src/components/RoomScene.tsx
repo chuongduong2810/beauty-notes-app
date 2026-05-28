@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useThree } from "@react-three/fiber";
 import { Mesh, Raycaster, Vector2 } from "three";
 import type { Room, Surface, Note, SurfaceKind } from "../lib/room";
 import { paletteEntry } from "../lib/palette";
 import { surfaceTransform } from "../lib/surface-geometry";
+import { HoverTooltip } from "./HoverTooltip";
 import { NoteMesh } from "./NoteMesh";
 import { PenProp } from "./PenProp";
 import { StrokeMesh } from "./StrokeMesh";
@@ -139,6 +140,7 @@ export function RoomScene({
 
   const surfaceMeshes = useRef<Map<string, Mesh>>(new Map());
   const trashMeshRef = useRef<Mesh | null>(null);
+  const [trashHovered, setTrashHovered] = useState(false);
   /** Wall clock at the start of the active Pen Stroke — used to compute
    *  `t` (ms since gesture started) for each appended point. */
   const penStrokeStart = useRef<number>(0);
@@ -324,7 +326,14 @@ export function RoomScene({
       {/* Trash bin on the floor — drag a Note onto it to delete. While
           a drag is active and the cursor is over this mesh, it gains
           a red emissive glow to signal "drop here to remove". */}
-      <group position={TRASH_POSITION}>
+      <group
+        position={TRASH_POSITION}
+        onPointerEnter={(e) => {
+          e.stopPropagation();
+          setTrashHovered(true);
+        }}
+        onPointerLeave={() => setTrashHovered(false)}
+      >
         <mesh
           ref={trashMeshRef}
           castShadow
@@ -355,6 +364,15 @@ export function RoomScene({
           <cylinderGeometry args={[0.13, 0.13, 0.005, 24]} />
           <meshStandardMaterial color="#1a1a1a" roughness={0.9} />
         </mesh>
+        {/* HUD tooltip — hidden while a drag is in progress (the
+            existing red glow already says "drop here") and in non-
+            Note modes where the trash isn't useful. */}
+        <HoverTooltip
+          visible={trashHovered && currentTool === "note" && !drag}
+          title="Trash"
+          subtitle="Drag a Note here to delete"
+          position={[0, 0.5, 0]}
+        />
       </group>
 
       {surfaces.map((s) => {

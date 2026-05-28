@@ -27,8 +27,11 @@ import { useAppStore } from "./store";
 const ROOM_BACKDROP = "#0e0b16";
 
 const ORBIT_TARGET: [number, number, number] = [0, 1.5, 0];
-const ORBIT_MIN_DISTANCE = 0.4;
-const ORBIT_MAX_DISTANCE = 20;
+/** Free zoom: only clamp at a tiny epsilon so the orbit math doesn't
+ *  divide by zero when the camera reaches the orbit target. Beyond
+ *  that the user can dolly in and out as far as they like. */
+const ORBIT_MIN_DISTANCE = 0.02;
+const ORBIT_MAX_DISTANCE = Infinity;
 const ORBIT_MIN_POLAR_ANGLE = 0.17;
 const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17;
 
@@ -222,8 +225,14 @@ export function App() {
     };
   }, [setSession, setRepo, setRoom]);
 
-  // Restore the persisted orbit pose once the Room is loaded — only
-  // while not focused, so we don't fight FocusDriver.
+  // Restore the persisted orbit pose ONCE per Room load. Previously
+  // this effect also depended on focusedNoteId + the camera_* fields,
+  // which meant: every Escape from focus mode would re-fire it and
+  // snap the camera to the persisted pose, overriding FocusDriver's
+  // lerp-back to `beforeFocus`. Bug: the camera "zoomed out" but lost
+  // the user's yaw/pitch on exit. Depending on room.id alone keeps
+  // initial-load behaviour and lets FocusDriver own the unfocus
+  // transition cleanly.
   useEffect(() => {
     if (!ready || !room || !orbitRef.current || focusedNoteId) return;
     const controls = orbitRef.current;
@@ -235,14 +244,9 @@ export function App() {
     const offset = new Vector3().setFromSpherical(sph);
     controls.object.position.copy(controls.target).add(offset);
     controls.update();
-  }, [
-    ready,
-    room?.id,
-    room?.camera_yaw,
-    room?.camera_pitch,
-    room?.camera_distance,
-    focusedNoteId,
-  ]);
+    // Deliberately omitting focusedNoteId / camera_* from deps — see
+    // comment above. eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, room?.id]);
 
   // Lock the orbit camera while a Pen Stroke is actively being drawn
   // (#35 follow-up): the user is committing to a continuous gesture on
