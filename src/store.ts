@@ -13,6 +13,12 @@ import { DebouncedSaver } from "./lib/debounced-saver";
 import type { ScreenRect } from "./lib/project-note-rect";
 
 const NOTE_BODY_DEBOUNCE_MS = 500;
+/**
+ * How long the crumple-then-delete animation plays before the Note is
+ * actually removed from state. Matches the spring settle time in
+ * NoteMesh's crumple useEffect. Slightly longer to be safe.
+ */
+const CRUMPLE_DURATION_MS = 600;
 
 // Module-scope debounced saver for Note bodies (ADR-0005). One channel
 // shared across all editing sessions; latest body wins.
@@ -66,6 +72,10 @@ type AppState = {
    *  Set by RoomScene's window-pointermove raycast; consumed by
    *  endNoteDrag to switch from "re-pin" to "delete". */
   dragOverTrash: boolean;
+  /** While set, the NoteMesh for this id plays the crumple-shrink
+   *  animation. Cleared (and the Note removed from state) once the
+   *  animation finishes. */
+  crumplingNoteId: string | null;
   focusedNoteId: string | null;
   beforeFocus: CameraPose | null;
 
@@ -84,6 +94,7 @@ type AppState = {
   setDragOverTrash: (over: boolean) => void;
   endNoteDrag: () => Promise<void>;
   deleteNote: (noteId: string) => Promise<void>;
+  crumpleAndDelete: (noteId: string) => Promise<void>;
 
   focusNote: (noteId: string, beforeFocus: CameraPose) => void;
   unfocusNote: () => Promise<void>;
@@ -103,6 +114,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   drag: null,
   dragOverTrash: false,
+  crumplingNoteId: null,
   focusedNoteId: null,
   beforeFocus: null,
 
@@ -159,6 +171,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  crumpleAndDelete: async (noteId) => {
+    // Drive the crumple animation in NoteMesh by setting the flag,
+    // then wait for the spring to settle, then remove the Note from
+    // local state + persist. Clearing the flag before the remove
+    // doesn't matter because the component unmounts on remove anyway.
+    set({ crumplingNoteId: noteId });
+    await new Promise((resolve) => setTimeout(resolve, CRUMPLE_DURATION_MS));
+    set({ crumplingNoteId: null });
+    await get().deleteNote(noteId);
+  },
+
   endNoteDrag: async () => {
     const { drag, repo, notes, dragOverTrash } = get();
     if (!drag) return;
@@ -166,9 +189,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ drag: null, dragOverTrash: false });
     if (!note || !repo) return;
 
-    // Dropped on the trash → delete instead of re-pin.
+    // Dropped on the trash → crumple animation, then delete.
     if (dragOverTrash) {
-      await get().deleteNote(drag.noteId);
+      await get().crumpleAndDelete(drag.noteId);
       return;
     }
 

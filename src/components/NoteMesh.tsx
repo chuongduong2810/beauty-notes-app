@@ -81,6 +81,8 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
   // sees.
   const editingNoteId = useAppStore((s) => s.editingNoteId);
   const isEditing = editingNoteId === note.id;
+  const crumplingNoteId = useAppStore((s) => s.crumplingNoteId);
+  const isCrumpling = crumplingNoteId === note.id;
 
   const pointerState = useRef<{
     pointerId: number | null;
@@ -132,6 +134,8 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
     pz: t.position[2],
     rx: 0,
     ry: 0,
+    rz: 0,
+    scale: 1,
     config: { mass: 0.6, tension: 220, friction: 16 },
   }));
 
@@ -214,6 +218,22 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
     springApi,
   ]);
 
+  // Crumple animation when this Note has been dropped on the trash.
+  // Drives a quick scale-down + tumble (Z spin + X tilt) on the same
+  // spring used by the drag physics. The Note is removed from state
+  // ~600 ms later by `crumpleAndDelete` in the store, at which point
+  // this component unmounts.
+  useEffect(() => {
+    if (!isCrumpling) return;
+    springApi.start({
+      scale: 0.05,
+      rz: Math.PI * 2,
+      rx: Math.PI * 0.45,
+      ry: Math.PI * 0.2,
+      config: { mass: 0.3, tension: 220, friction: 14 },
+    });
+  }, [isCrumpling, springApi]);
+
   return (
     <animated.group
       position-x={spring.px}
@@ -221,6 +241,8 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
       position-z={spring.pz}
       rotation-x={spring.rx}
       rotation-y={spring.ry}
+      rotation-z={spring.rz}
+      scale={spring.scale}
     >
       <mesh
         castShadow
