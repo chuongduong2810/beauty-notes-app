@@ -19,14 +19,18 @@ const TEXTURE_SIZE = 1024;
 /** ~7 mm rule spacing on an 18 cm note — matches real ruled paper. */
 const HORIZONTAL_LINE_COUNT = 26;
 /**
- * Line alpha is intentionally high so that after the texture is
- * multiplied by the material's palette colour and washed by the
- * postprocessing chain (Bloom, ACES tone mapping), the rules are still
- * clearly visible. 0.10 was invisible on pastel bases; 0.40 reads as
- * classic ruled notebook on every palette entry.
+ * Line alpha + width are tuned to survive the postprocessing chain
+ * (Bloom, ACES tone-mapping, focus-mode DepthOfField, anisotropic
+ * sampling) at close-up focus distance. Earlier 0.65 alpha + 2.5 px
+ * width looked clear at orbit distance but went hazy in focus mode
+ * where the texture is sampled at near-1:1 and a small blur radius
+ * lifts the dark rules. Pushing both up keeps the notebook ruling
+ * legible whether the user is across the Room or 20 cm away.
  */
-const HORIZONTAL_LINE_ALPHA = 0.65;
-const MARGIN_LINE_ALPHA = 0.75;
+const HORIZONTAL_LINE_ALPHA = 0.92;
+const HORIZONTAL_LINE_WIDTH_PX = 3.5;
+const MARGIN_LINE_ALPHA = 0.95;
+const MARGIN_LINE_WIDTH_PX = 3.5;
 const MARGIN_LINE_OFFSET_RATIO = 0.085;
 const GRAIN_AMPLITUDE = 8;
 const TOP_HIGHLIGHT_ALPHA = 0.06;
@@ -54,10 +58,12 @@ export function createPaperTexture(): CanvasTexture | null {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
 
-  // Horizontal ruled lines. Near-black + high alpha so the rules
-  // survive the postprocessing washes (Bloom + ACES tone-map).
-  ctx.strokeStyle = `rgba(15, 12, 8, ${HORIZONTAL_LINE_ALPHA})`;
-  ctx.lineWidth = 2.5;
+  // Horizontal ruled lines. Pure-dark + nearly opaque so the rules
+  // survive the postprocessing washes (Bloom + ACES tone-map) and
+  // stay readable in focus mode where the texture is sampled close
+  // to 1:1.
+  ctx.strokeStyle = `rgba(8, 6, 4, ${HORIZONTAL_LINE_ALPHA})`;
+  ctx.lineWidth = HORIZONTAL_LINE_WIDTH_PX;
   const lineSpacing = TEXTURE_SIZE / HORIZONTAL_LINE_COUNT;
   for (let i = 1; i < HORIZONTAL_LINE_COUNT; i++) {
     const y = i * lineSpacing;
@@ -68,8 +74,8 @@ export function createPaperTexture(): CanvasTexture | null {
   }
 
   // Single red margin line, classic notebook-page accent.
-  ctx.strokeStyle = `rgba(200, 60, 60, ${MARGIN_LINE_ALPHA})`;
-  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = `rgba(190, 50, 50, ${MARGIN_LINE_ALPHA})`;
+  ctx.lineWidth = MARGIN_LINE_WIDTH_PX;
   const marginX = TEXTURE_SIZE * MARGIN_LINE_OFFSET_RATIO;
   ctx.beginPath();
   ctx.moveTo(marginX, 0);
@@ -89,7 +95,10 @@ export function createPaperTexture(): CanvasTexture | null {
 
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
-  texture.anisotropy = 4;
+  // Max anisotropy keeps the ruled lines crisp at oblique grazing
+  // angles (camera looking along the wall in focus mode). Three.js
+  // clamps this to the device's max automatically.
+  texture.anisotropy = 16;
   texture.needsUpdate = true;
   return texture;
 }

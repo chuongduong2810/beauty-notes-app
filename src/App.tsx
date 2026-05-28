@@ -30,8 +30,12 @@ const ORBIT_TARGET: [number, number, number] = [0, 1.5, 0];
 /** Free zoom: only clamp at a tiny epsilon so the orbit math doesn't
  *  divide by zero when the camera reaches the orbit target. Beyond
  *  that the user can dolly in and out as far as they like. */
-const ORBIT_MIN_DISTANCE = 0.02;
+const ORBIT_MIN_DISTANCE = 0.001;
 const ORBIT_MAX_DISTANCE = Infinity;
+/** Wheel-zoom feels best ~2x the OrbitControls default — anything less
+ *  is the user grinding through dozens of wheel ticks to dolly across
+ *  a 6 m Room. */
+const ORBIT_ZOOM_SPEED = 2.0;
 const ORBIT_MIN_POLAR_ANGLE = 0.17;
 const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17;
 
@@ -359,7 +363,7 @@ export function App() {
           minPolarAngle={ORBIT_MIN_POLAR_ANGLE}
           maxPolarAngle={ORBIT_MAX_POLAR_ANGLE}
           rotateSpeed={0.7}
-          zoomSpeed={0.8}
+          zoomSpeed={ORBIT_ZOOM_SPEED}
           onChange={onCameraChange}
         />
         <FocusDriver orbitRef={orbitRef} />
