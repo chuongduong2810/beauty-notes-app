@@ -36,3 +36,19 @@ The fixed, curated set of ~6 hues a Note's background can be set to. Each entry 
 **User**:
 The person who owns Rooms and the Notes inside them. Rooms are private to their owner — no sharing or collaboration in v2. A User exists from the first app load via anonymous auth and can later be promoted to a signed-up account without losing data (see ADR-0003).
 _Avoid_: Account, member
+
+**Attachment**:
+The visual element that suggests how a Note is held to its Surface — a strip of washi tape across the top edge, a metal push-pin in the upper-left, a decorative sticker corner, or nothing (clean Pin). Each Note has exactly one Attachment style chosen from a fixed palette. Some styles also drive the Note's cloth-solver pin constraints (e.g. tape = two anchors along the top edge; push-pin = single anchor at top centre; sticker = no anchoring effect, visual only). See ADR-0013.
+_Avoid_: Mount, fastener, sticker (one specific style), pin (overloaded with the verb)
+
+**Annotation**:
+A freehand drawing made directly on a Surface — strokes, doodles, arrows, highlights. Lives on a Surface like a Note does, but holds vector path data instead of text. An Annotation is open-ended (a list of pressure-weighted Strokes); a Note is a discrete textual unit. The two coexist on the same Surface and never mix into one record. See ADR-0014.
+_Avoid_: Drawing (overloaded verb), sketch, scribble, doodle, markup
+
+**Stroke**:
+One continuous pen-down → pen-up gesture inside an Annotation. Stored as an ordered list of points in `(u, v)` Surface coordinates, each carrying a normalized pressure and a colour reference into the Palette. The atomic unit of undo / redo inside an Annotation.
+_Avoid_: Line, path, segment
+
+**Photo Mode**:
+A camera-and-render-tuning mode for cinematic captures: DOM overlays hidden, postprocessing dialled up (heavier bloom, deeper DOF, subtle vignette, warm tint), FOV tightened, and the current frame exported as a high-resolution PNG or JPEG. Entered explicitly from a chrome control; exited explicitly. Distinct from the browser-native screenshot — the term is reserved for our in-app cinematic capture.
+_Avoid_: Screenshot, capture, photo, snapshot

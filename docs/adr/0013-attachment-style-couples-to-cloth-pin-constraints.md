@@ -1,0 +1,13 @@
+# Attachment Style Drives the Note's Cloth Pin Constraints
+
+Each Note carries an **Attachment** style — one of `none`, `push-pin`, `washi-tape`, or one of three `sticker-*` variants — chosen from a fixed palette. The Attachment is a decorative mesh rendered between the Note and its Surface (a push-pin head, a strip of tape, a small corner sticker), and — critically — its identity also determines how the Note is constrained by the cloth solver from ADR-0012.
+
+We chose to **couple Attachment to the cloth solver's pin constraints** rather than leave it purely cosmetic. A push-pin Attachment anchors one vertex at the Note's top-centre, so the Note sags from a single point and corners fall under gravity. A washi-tape Attachment anchors two vertices along the top edge, so the Note hangs flatter but the bottom corners still curl. A sticker Attachment is visual only, and the Note continues to pin from all four corners (default). The decorative element and the simulated paper behaviour become one decision, which is the v2 brief's "tactile, realistic" language taken seriously: a push-pinned note that doesn't sag would betray the visual.
+
+We rejected the cosmetic-only alternative because it produces an obvious uncanny break — the eye sees a push-pin and expects gravity, and a perfectly flat Note immediately reads as fake. The mesh-only cost (rendering a small push-pin / tape strip near the Note) is the same in both options; the difference is whether the solver reads the Attachment when it builds the constraint set. Reading one field at solver-init time is the cheaper end of "real".
+
+We also rejected free user-uploaded sticker assets. A curated palette of attachment styles mirrors the Note Palette pattern (ADR-style `attachment_style_id` referencing a fixed set, never a raw asset reference) so the aesthetic stays coherent and we avoid an asset moderation / storage / upload pipeline that isn't in the v2 brief.
+
+The naming is deliberate. **Attachment** is the noun for the visual element; **Pin** remains the verb for the action of attaching a Note to a Surface (CONTEXT.md). A push-pin Attachment is the visual; Pinning a Note is the action. Using `attachment_style_id` in the data model and "push-pin Attachment" in user-facing copy keeps the noun/verb separation enforced.
+
+The accepted cost: the cloth solver from #19 must read `attachment_style_id` and translate it into a constraint set; this is one switch statement at solver init, but it's a coupling between two systems that would otherwise be independent. If we ever decide cosmetic-only is the right call after all, the rollback is a one-line change — make the solver ignore the field — and no data migration is needed.
