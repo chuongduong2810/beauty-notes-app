@@ -1,22 +1,25 @@
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Text } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import { animated, useSpring } from "@react-spring/three";
 import { paletteEntry } from "../lib/palette";
 import { noteLocalTransform } from "../lib/note-placement";
 import type { Note } from "../lib/room";
 import { useAppStore } from "../store";
-import { createClothGeometry, cornerPins } from "../lib/cloth-geometry";
-import { step as stepCloth, wake as wakeCloth } from "../lib/xpbd";
 
 export const TEXT_PAD_M = 0.01;
 export const TEXT_FONT_SIZE_M = 0.012;
 export const TEXT_LINE_HEIGHT = 1.3;
 const DRAG_THRESHOLD_PX = 5;
 const GRAB_STANDOFF_M = 0.005; // 5 mm lift off the wall while held
-/** Cloth subdivisions per side (issue #19 / ADR-0012). */
-const CLOTH_SEGMENTS = 20;
-/** Re-compute vertex normals every N frames — costly to do every frame. */
-const NORMALS_EVERY_N_FRAMES = 2;
+/**
+ * Drag-only physics (#19 / client brief: "Khi drag: note hơi cong, có
+ * inertia, rung nhẹ khi release"). Tilt magnitude per (uv/sec) of pin
+ * velocity, in radians. Kept small so the lean reads as paper-bend, not
+ * a flying card.
+ */
+const TILT_GAIN = 0.15;
+const MAX_TILT_RAD = 0.25;
 // Lora — warm serif, claude.ai-style. Self-hosted from public/fonts/
 // (WOFF, latin-ext subset from @fontsource/lora via unpkg, ~16 KB).
 // Covers basic Latin + Latin Extended-A (incl. Đđ). Full Vietnamese
@@ -24,6 +27,9 @@ const NORMALS_EVERY_N_FRAMES = 2;
 // them, swap in a multi-subset font file. The DOM textarea uses the
 // matching Google Fonts CSS loaded in index.html.
 const NOTE_FONT_URL = "/fonts/Lora-Regular.woff";
+
+const clamp = (x: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, x));
 
 type Props = {
   note: Note;
@@ -37,8 +43,12 @@ type Props = {
  * mesh (ADR-0010). Wrapped in `memo` so re-rendering one Note's body
  * (per keystroke during editing) doesn't re-mount all the other Notes.
  *
- * Surface size is passed as primitives (not an array) so memo's
- * shallow comparator sees them as stable across `RoomScene` renders.
+ * At rest the Note is a flat plane with no physics activity. The drag
+ * physics from #19 / the v3 client brief are gated on `isDragging`:
+ * while held, a spring drives a small lift, an in-motion tilt (the
+ * "bend"), and an inertial lag (the rendered position chases the logical
+ * pin rather than snapping). On release the spring returns to the rest
+ * pose with low friction, producing the brief "rung nhẹ" oscillation.
  *
  * Pointer interactions:
  * - **pointer-down + release without movement** → click → `onClick(id)`
@@ -107,59 +117,111 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
     }
   };
 
-  const z = isDragging ? GRAB_STANDOFF_M : t.position[2];
+  const [spring, springApi] = useSpring(() => ({
+    px: t.position[0],
+    py: t.position[1],
+    pz: t.position[2],
+    rx: 0,
+    ry: 0,
+    config: { mass: 0.6, tension: 220, friction: 16 },
+  }));
 
-  // XPBD cloth solver (issue #19). One solver state + one BufferGeometry
-  // per Note, allocated once per (width_cm, height_cm). The geometry's
-  // position attribute shares memory with the solver's positions
-  // Float32Array, so `step()` mutates the GPU buffer directly.
-  //
-  // Bugs fixed at the lib level since the first integration attempt:
-  // - cloth-geometry.ts winds triangles CCW from +z (front face toward
-  //   the room interior). The first attempt had reversed winding so
-  //   most of the mesh was back-face-culled and only fragments showed.
-  // - xpbd.ts step() clamps incoming dt to 1/60 s so a stalled frame
-  //   can't blow up the Verlet integration.
-  const { cloth, geometry } = useMemo(
-    () =>
-      createClothGeometry({
-        width: t.size_m[0],
-        height: t.size_m[1],
-        segments: CLOTH_SEGMENTS,
-        // Default to all four corners pinned — paper sits "flat, taut"
-        // (issue #19 first acceptance criterion). Future Attachment
-        // styles (#33) override this with push-pin / washi-tape pins.
-        pins: cornerPins(CLOTH_SEGMENTS),
-      }),
-    [t.size_m[0], t.size_m[1]],
-  );
-
-  // Wake the solver whenever the Note is grabbed — a lift-off generates
-  // motion the solver must respond to even if it had gone to sleep.
-  const wasDragging = useRef(false);
-  if (isDragging && !wasDragging.current) wakeCloth(cloth);
-  wasDragging.current = isDragging;
-
-  const frameCounter = useRef(0);
-  useFrame((_, dt) => {
-    if (cloth.sleeping) return;
-    stepCloth(cloth, dt);
-    geometry.attributes.position.needsUpdate = true;
-    frameCounter.current = (frameCounter.current + 1) % NORMALS_EVERY_N_FRAMES;
-    if (frameCounter.current === 0) geometry.computeVertexNormals();
+  // Smoothed UV velocity from the drag pin. Resets every time a drag
+  // starts so the first frame doesn't see a huge phantom velocity from
+  // wherever the previous drag left off.
+  const dragVel = useRef({
+    u: 0,
+    v: 0,
+    lastU: 0,
+    lastV: 0,
+    primed: false,
   });
 
+  useFrame((_, dt) => {
+    if (!isDragging || !drag) return;
+    if (!dragVel.current.primed) {
+      dragVel.current.lastU = drag.u;
+      dragVel.current.lastV = drag.v;
+      dragVel.current.primed = true;
+    } else {
+      const dts = Math.max(dt, 0.001);
+      const ALPHA = 0.3;
+      const du = (drag.u - dragVel.current.lastU) / dts;
+      const dv = (drag.v - dragVel.current.lastV) / dts;
+      dragVel.current.u = dragVel.current.u * (1 - ALPHA) + du * ALPHA;
+      dragVel.current.v = dragVel.current.v * (1 - ALPHA) + dv * ALPHA;
+      dragVel.current.lastU = drag.u;
+      dragVel.current.lastV = drag.v;
+    }
+
+    const targetRx = clamp(
+      -dragVel.current.v * TILT_GAIN,
+      -MAX_TILT_RAD,
+      MAX_TILT_RAD,
+    );
+    const targetRy = clamp(
+      dragVel.current.u * TILT_GAIN,
+      -MAX_TILT_RAD,
+      MAX_TILT_RAD,
+    );
+
+    springApi.start({
+      px: t.position[0],
+      py: t.position[1],
+      pz: t.position[2] + GRAB_STANDOFF_M,
+      rx: targetRx,
+      ry: targetRy,
+      // Smooth follow during drag — critically damped feel.
+      config: { mass: 0.6, tension: 220, friction: 16 },
+    });
+  });
+
+  // On release transition, settle back to the resting pose with low
+  // friction so the spring overshoots once or twice before settling —
+  // the brief's "rung nhẹ khi release".
+  useEffect(() => {
+    if (!isDragging) {
+      dragVel.current = {
+        u: 0,
+        v: 0,
+        lastU: 0,
+        lastV: 0,
+        primed: false,
+      };
+      springApi.start({
+        px: t.position[0],
+        py: t.position[1],
+        pz: t.position[2],
+        rx: 0,
+        ry: 0,
+        config: { mass: 0.5, tension: 260, friction: 5 },
+      });
+    }
+  }, [
+    isDragging,
+    t.position[0],
+    t.position[1],
+    t.position[2],
+    springApi,
+  ]);
+
   return (
-    <group position={[t.position[0], t.position[1], z]}>
+    <animated.group
+      position-x={spring.px}
+      position-y={spring.py}
+      position-z={spring.pz}
+      rotation-x={spring.rx}
+      rotation-y={spring.ry}
+    >
       <mesh
         castShadow
         receiveShadow
-        geometry={geometry}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
+        <planeGeometry args={t.size_m} />
         <meshStandardMaterial color={color} roughness={0.85} metalness={0} />
       </mesh>
       {!isEditing && (
@@ -193,7 +255,7 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
           {note.body || " "}
         </Text>
       )}
-    </group>
+    </animated.group>
   );
 }
 
