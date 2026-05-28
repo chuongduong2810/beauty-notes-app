@@ -25,8 +25,8 @@ const HORIZONTAL_LINE_COUNT = 26;
  * clearly visible. 0.10 was invisible on pastel bases; 0.40 reads as
  * classic ruled notebook on every palette entry.
  */
-const HORIZONTAL_LINE_ALPHA = 0.4;
-const MARGIN_LINE_ALPHA = 0.55;
+const HORIZONTAL_LINE_ALPHA = 0.65;
+const MARGIN_LINE_ALPHA = 0.75;
 const MARGIN_LINE_OFFSET_RATIO = 0.085;
 const GRAIN_AMPLITUDE = 8;
 const TOP_HIGHLIGHT_ALPHA = 0.06;
@@ -54,10 +54,10 @@ export function createPaperTexture(): CanvasTexture | null {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
 
-  // Horizontal ruled lines. Dark colour + high alpha so the rules
-  // survive the postprocessing washes.
-  ctx.strokeStyle = `rgba(30, 25, 20, ${HORIZONTAL_LINE_ALPHA})`;
-  ctx.lineWidth = 2;
+  // Horizontal ruled lines. Near-black + high alpha so the rules
+  // survive the postprocessing washes (Bloom + ACES tone-map).
+  ctx.strokeStyle = `rgba(15, 12, 8, ${HORIZONTAL_LINE_ALPHA})`;
+  ctx.lineWidth = 2.5;
   const lineSpacing = TEXTURE_SIZE / HORIZONTAL_LINE_COUNT;
   for (let i = 1; i < HORIZONTAL_LINE_COUNT; i++) {
     const y = i * lineSpacing;
@@ -68,8 +68,8 @@ export function createPaperTexture(): CanvasTexture | null {
   }
 
   // Single red margin line, classic notebook-page accent.
-  ctx.strokeStyle = `rgba(200, 70, 70, ${MARGIN_LINE_ALPHA})`;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = `rgba(200, 60, 60, ${MARGIN_LINE_ALPHA})`;
+  ctx.lineWidth = 2.5;
   const marginX = TEXTURE_SIZE * MARGIN_LINE_OFFSET_RATIO;
   ctx.beginPath();
   ctx.moveTo(marginX, 0);
