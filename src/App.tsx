@@ -32,10 +32,15 @@ const ORBIT_TARGET: [number, number, number] = [0, 1.5, 0];
  *  that the user can dolly in and out as far as they like. */
 const ORBIT_MIN_DISTANCE = 0.001;
 const ORBIT_MAX_DISTANCE = Infinity;
-/** Wheel-zoom feels best ~2x the OrbitControls default — anything less
- *  is the user grinding through dozens of wheel ticks to dolly across
- *  a 6 m Room. */
-const ORBIT_ZOOM_SPEED = 2.0;
+/**
+ * Wheel-zoom factor per tick is `Math.pow(0.95, zoomSpeed)`. At our
+ * old value of 2.0 each tick only shrank the orbit radius by ~10% —
+ * starting from 3 m it took ~70 ticks to reach the millimetre floor,
+ * which read as "I can't get any closer". At 5.0 each tick is ~22%,
+ * so the user reaches close-up in ~10 ticks. Higher (8–10) feels
+ * twitchy on touchpads.
+ */
+const ORBIT_ZOOM_SPEED = 5.0;
 const ORBIT_MIN_POLAR_ANGLE = 0.17;
 const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17;
 
@@ -342,7 +347,7 @@ export function App() {
     >
       <Canvas
         shadows={{ type: PCFSoftShadowMap }}
-        camera={{ position: [0, 1.6, 1.8], fov: 60, near: 0.05, far: 50 }}
+        camera={{ position: [0, 1.6, 1.8], fov: 60, near: 0.002, far: 50 }}
         gl={{
           toneMapping: ACESFilmicToneMapping,
           toneMappingExposure: 1.05,
