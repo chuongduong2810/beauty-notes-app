@@ -364,6 +364,12 @@ export function App() {
           maxPolarAngle={ORBIT_MAX_POLAR_ANGLE}
           rotateSpeed={0.7}
           zoomSpeed={ORBIT_ZOOM_SPEED}
+          // Wheel-zoom dollies toward whatever's under the cursor and
+          // shifts the orbit target in that direction. Without this
+          // the camera can only dolly toward the fixed orbit pivot at
+          // room centre — so the user can never wheel "into" a wall.
+          // Standard Figma / Blender / Photoshop zoom-to-cursor.
+          zoomToCursor
           onChange={onCameraChange}
         />
         <FocusDriver orbitRef={orbitRef} />
