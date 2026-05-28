@@ -21,8 +21,9 @@ export function createClothGeometry(params: ClothParams): {
     new BufferAttribute(cloth.positions, 3),
   );
 
-  // Triangulate the grid. Two triangles per cell: (a, c, b) + (b, c, d)
-  // where a, b are bottom edge and c, d are top edge.
+  // Triangulate the grid. Two triangles per cell, wound CCW from +z so
+  // the front face points toward the room interior (the camera side).
+  // a = BL, b = BR, c = TL, d = TR within each cell.
   const verticesPerSide = params.segments + 1;
   const indices: number[] = [];
   for (let j = 0; j < params.segments; j++) {
@@ -31,8 +32,8 @@ export function createClothGeometry(params: ClothParams): {
       const b = a + 1;
       const c = a + verticesPerSide;
       const d = c + 1;
-      indices.push(a, c, b);
-      indices.push(b, c, d);
+      indices.push(a, b, c);
+      indices.push(b, d, c);
     }
   }
   geometry.setIndex(indices);

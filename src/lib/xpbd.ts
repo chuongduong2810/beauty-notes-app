@@ -12,6 +12,15 @@ const GRAVITY_M_PER_S2 = 9.81;
 /** XPBD constraint-solve iterations per `step`. Higher = stiffer. */
 const CONSTRAINT_ITERATIONS = 8;
 /**
+ * Hard cap on the Verlet integration timestep. With Verlet, gravity
+ * scales as `dt²` — a slow first frame (browser still loading,
+ * tab-switch resume, etc.) can pass a huge `dt`, which teleports
+ * unpinned particles far past their constraint distance and the
+ * cloth explodes before constraints can recover. Clamping to ~60 fps
+ * keeps the solver stable under stalls.
+ */
+const MAX_DT_S = 1 / 60;
+/**
  * Velocity damping per step. Strong damping suppresses jiggle on what
  * should look like stiff paper. Implemented as `v *= (1 - DAMPING)`.
  */
@@ -116,6 +125,9 @@ export function wake(cloth: ClothState): void {
 
 export function step(cloth: ClothState, dt: number): void {
   if (cloth.sleeping) return;
+
+  // Cap dt so Verlet's dt² term can't teleport particles on slow frames.
+  if (dt > MAX_DT_S) dt = MAX_DT_S;
 
   const { positions, prevPositions, pinned, particleCount, edges } = cloth;
   const ay = -GRAVITY_M_PER_S2;

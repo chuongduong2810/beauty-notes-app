@@ -1,22 +1,16 @@
-import { memo, useMemo, useRef } from "react";
+import { memo, useRef } from "react";
 import { Text } from "@react-three/drei";
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import type { ThreeEvent } from "@react-three/fiber";
 import { paletteEntry } from "../lib/palette";
 import { noteLocalTransform } from "../lib/note-placement";
 import type { Note } from "../lib/room";
 import { useAppStore } from "../store";
-import { createClothGeometry, cornerPins } from "../lib/cloth-geometry";
-import { step as stepCloth, wake as wakeCloth } from "../lib/xpbd";
 
 export const TEXT_PAD_M = 0.01;
 export const TEXT_FONT_SIZE_M = 0.012;
 export const TEXT_LINE_HEIGHT = 1.3;
 const DRAG_THRESHOLD_PX = 5;
 const GRAB_STANDOFF_M = 0.005; // 5 mm lift off the wall while held
-/** Cloth subdivisions per side (issue #19 / ADR-0012). */
-const CLOTH_SEGMENTS = 20;
-/** Re-compute vertex normals every N frames — costly to do every frame. */
-const NORMALS_EVERY_N_FRAMES = 2;
 // Lora — warm serif, claude.ai-style. Self-hosted from public/fonts/
 // (WOFF, latin-ext subset from @fontsource/lora via unpkg, ~16 KB).
 // Covers basic Latin + Latin Extended-A (incl. Đđ). Full Vietnamese
@@ -109,51 +103,17 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
 
   const z = isDragging ? GRAB_STANDOFF_M : t.position[2];
 
-  // XPBD cloth solver (issue #19): one solver state + one BufferGeometry
-  // per Note, allocated once per (width_cm, height_cm) and re-allocated
-  // only if the Note resizes (not in v2 yet). The geometry's position
-  // attribute shares memory with the solver's positions Float32Array so
-  // `step()` mutates the GPU buffer directly.
-  const { cloth, geometry } = useMemo(
-    () =>
-      createClothGeometry({
-        width: t.size_m[0],
-        height: t.size_m[1],
-        segments: CLOTH_SEGMENTS,
-        // Default to all four corners pinned — paper sits "flat, taut"
-        // (issue #19 first acceptance criterion). Future Attachment
-        // styles (#33) will override this.
-        pins: cornerPins(CLOTH_SEGMENTS),
-      }),
-    [t.size_m[0], t.size_m[1]],
-  );
-
-  // Wake the solver whenever the Note is grabbed — a lift-off generates
-  // motion the solver must respond to even if it had gone to sleep.
-  const wasDragging = useRef(false);
-  if (isDragging && !wasDragging.current) wakeCloth(cloth);
-  wasDragging.current = isDragging;
-
-  const frameCounter = useRef(0);
-  useFrame((_, dt) => {
-    if (cloth.sleeping) return;
-    stepCloth(cloth, dt);
-    geometry.attributes.position.needsUpdate = true;
-    frameCounter.current = (frameCounter.current + 1) % NORMALS_EVERY_N_FRAMES;
-    if (frameCounter.current === 0) geometry.computeVertexNormals();
-  });
-
   return (
     <group position={[t.position[0], t.position[1], z]}>
       <mesh
         castShadow
         receiveShadow
-        geometry={geometry}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
+        <planeGeometry args={t.size_m} />
         <meshStandardMaterial color={color} roughness={0.85} metalness={0} />
       </mesh>
       {!isEditing && (
