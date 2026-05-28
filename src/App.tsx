@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { Spherical, Vector3 } from "three";
+import {
+  ACESFilmicToneMapping,
+  PCFSoftShadowMap,
+  Spherical,
+  Vector3,
+} from "three";
 import { supabase } from "./lib/supabase";
 import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
@@ -234,10 +239,14 @@ export function App() {
   return (
     <div style={{ position: "fixed", inset: 0, background: ROOM_BACKDROP }}>
       <Canvas
-        shadows
+        shadows={{ type: PCFSoftShadowMap }}
         camera={{ position: [0, 1.6, 1.8], fov: 60, near: 0.05, far: 50 }}
+        gl={{
+          toneMapping: ACESFilmicToneMapping,
+          toneMappingExposure: 1.05,
+          antialias: true,
+        }}
         onPointerMissed={() => {
-          // Click on empty Canvas (no mesh hit) — exit focus if focused.
           if (focusedNoteId) unfocusNote();
         }}
       >
@@ -257,14 +266,26 @@ export function App() {
         />
         <FocusDriver orbitRef={orbitRef} />
         <EditorRectPublisher />
-        <hemisphereLight args={["#ffe7c4", "#5a4a36", 0.55]} />
+        {/* Warm hemispheric fill — sky from above, slightly cooler floor
+            bounce. Low intensity for a calm tone. */}
+        <hemisphereLight args={["#ffe6c2", "#4f3f2f", 0.5]} />
+        {/* "Window" key light at ~3000 K from behind-camera-right.
+            castShadow + PCFSoftShadowMap (Canvas-level) give soft
+            penumbras. Bias prevents shadow acne at Note standoff. */}
         <directionalLight
           position={[1.8, 2.6, 2.2]}
-          intensity={0.95}
-          color="#fff1d6"
+          intensity={1.1}
+          color="#ffe2b0"
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
+          shadow-bias={-0.0005}
+          shadow-camera-near={0.1}
+          shadow-camera-far={15}
+          shadow-camera-left={-4}
+          shadow-camera-right={4}
+          shadow-camera-top={4}
+          shadow-camera-bottom={-4}
         />
         {ready && room && (
           <RoomScene
