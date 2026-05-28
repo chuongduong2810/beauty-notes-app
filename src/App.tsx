@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { Atmosphere } from "./components/Atmosphere";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ACESFilmicToneMapping,
   type DirectionalLight,
@@ -10,16 +8,18 @@ import {
   Spherical,
   Vector3,
 } from "three";
-import { supabase } from "./lib/supabase";
-import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
-import { bootstrapSessionAndRoom } from "./lib/bootstrap";
-import { useAppStore } from "./store";
-import { RoomScene } from "./components/RoomScene";
-import { NoteEditor } from "./components/NoteEditor";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { Atmosphere } from "./components/Atmosphere";
 import { EditorRectPublisher } from "./components/EditorRectPublisher";
+import { NoteEditor } from "./components/NoteEditor";
+import { RoomScene } from "./components/RoomScene";
+import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
 import { shadowFollowPose } from "./lib/shadow-follow";
+import { supabase } from "./lib/supabase";
+import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
+import { useAppStore } from "./store";
 
 const ROOM_BACKDROP = "#0e0b16";
 

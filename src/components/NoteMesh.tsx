@@ -4,8 +4,17 @@ import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { animated, useSpring } from "@react-spring/three";
 import { paletteEntry } from "../lib/palette";
 import { noteLocalTransform } from "../lib/note-placement";
+import { createPaperTexture } from "../lib/note-paper-texture";
 import type { Note } from "../lib/room";
 import { useAppStore } from "../store";
+
+/**
+ * Shared ruled-paper texture (client brief: "Giống giấy thật"). Built
+ * once at module load and reused by every Note. Mostly white so the
+ * material's `color` multiplies the palette hue through; the rules
+ * and grain end up palette-coherent automatically.
+ */
+const PAPER_TEXTURE = createPaperTexture();
 
 export const TEXT_PAD_M = 0.01;
 export const TEXT_FONT_SIZE_M = 0.012;
@@ -222,7 +231,12 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
         onPointerCancel={onPointerUp}
       >
         <planeGeometry args={t.size_m} />
-        <meshStandardMaterial color={color} roughness={0.85} metalness={0} />
+        <meshStandardMaterial
+          color={color}
+          map={PAPER_TEXTURE ?? undefined}
+          roughness={0.85}
+          metalness={0}
+        />
       </mesh>
       {!isEditing && (
         <Text
