@@ -111,6 +111,14 @@ export class InMemoryCanvasRepository implements CanvasRepository {
     return updated;
   }
 
+  async deleteNote(id: string): Promise<void> {
+    const before = this.notes.length;
+    this.notes = this.notes.filter((n) => n.id !== id);
+    if (this.notes.length === before) {
+      throw new Error(`deleteNote: no Note with id ${id}`);
+    }
+  }
+
   async updateRoomCamera(
     id: string,
     pose: { yaw: number; pitch: number; distance: number },

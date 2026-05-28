@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { Atmosphere } from "./components/Atmosphere";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ACESFilmicToneMapping,
   type DirectionalLight,
@@ -10,22 +8,25 @@ import {
   Spherical,
   Vector3,
 } from "three";
-import { supabase } from "./lib/supabase";
-import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
-import { bootstrapSessionAndRoom } from "./lib/bootstrap";
-import { useAppStore } from "./store";
-import { RoomScene } from "./components/RoomScene";
-import { NoteEditor } from "./components/NoteEditor";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { Atmosphere } from "./components/Atmosphere";
 import { EditorRectPublisher } from "./components/EditorRectPublisher";
+import { NoteEditor } from "./components/NoteEditor";
+import { RoomScene } from "./components/RoomScene";
+import { RoomFurniture } from "./components/RoomFurniture";
+import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
 import { shadowFollowPose } from "./lib/shadow-follow";
+import { supabase } from "./lib/supabase";
+import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
+import { useAppStore } from "./store";
 
 const ROOM_BACKDROP = "#0e0b16";
 
 const ORBIT_TARGET: [number, number, number] = [0, 1.5, 0];
 const ORBIT_MIN_DISTANCE = 0.4;
-const ORBIT_MAX_DISTANCE = 2.7;
+const ORBIT_MAX_DISTANCE = 20;
 const ORBIT_MIN_POLAR_ANGLE = 0.17;
 const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17;
 
@@ -337,6 +338,9 @@ export function App() {
             onNoteClick={onNoteClick}
           />
         )}
+        {/* Lamp, desk, plant — small set of primitive-only props so
+            the Room reads as a lived-in space. */}
+        <RoomFurniture />
         {/* MUST be the last Canvas child — EffectComposer wraps the scene
             it renders. multisampling=0 inside Atmosphere is what keeps
             R3F's pointer raycasting working (the previous attempt to

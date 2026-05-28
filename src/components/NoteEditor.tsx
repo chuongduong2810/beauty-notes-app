@@ -79,7 +79,11 @@ export function NoteEditor() {
     caretColor: "#2a2330",
     boxSizing: "border-box",
     zIndex: 20,
-    overflow: "hidden",
+    // Long notes get a vertical scrollbar in focus mode; styled via
+    // index.html's textarea[data-note-editor] CSS so the thumb is
+    // palette-coherent and unobtrusive.
+    overflowX: "hidden",
+    overflowY: "auto",
     margin: 0,
     // Match troika's overflowWrap="break-word" so the textarea breaks
     // long unbroken tokens at the same character positions the WebGL

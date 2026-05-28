@@ -1,18 +1,24 @@
-import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
+import { create } from "zustand";
 import type { CanvasRepository } from "./lib/canvas-repository";
+import { DebouncedSaver } from "./lib/debounced-saver";
+import { DEFAULT_NOTE_COLOR_ID } from "./lib/palette";
+import type { ScreenRect } from "./lib/project-note-rect";
 import {
-  DEFAULT_NOTE_WIDTH_CM,
   DEFAULT_NOTE_HEIGHT_CM,
+  DEFAULT_NOTE_WIDTH_CM,
+  type Note,
   type Room,
   type Surface,
-  type Note,
 } from "./lib/room";
-import { DEFAULT_NOTE_COLOR_ID } from "./lib/palette";
-import { DebouncedSaver } from "./lib/debounced-saver";
-import type { ScreenRect } from "./lib/project-note-rect";
 
 const NOTE_BODY_DEBOUNCE_MS = 500;
+/**
+ * How long the crumple-then-delete animation plays before the Note is
+ * actually removed from state. Matches the spring settle time in
+ * NoteMesh's crumple useEffect. Slightly longer to be safe.
+ */
+const CRUMPLE_DURATION_MS = 900;
 
 // Module-scope debounced saver for Note bodies (ADR-0005). One channel
 // shared across all editing sessions; latest body wins.
@@ -62,6 +68,14 @@ type AppState = {
   notes: Note[];
 
   drag: DragPin | null;
+  /** True while the active drag's cursor is over the trash bin mesh.
+   *  Set by RoomScene's window-pointermove raycast; consumed by
+   *  endNoteDrag to switch from "re-pin" to "delete". */
+  dragOverTrash: boolean;
+  /** While set, the NoteMesh for this id plays the crumple-shrink
+   *  animation. Cleared (and the Note removed from state) once the
+   *  animation finishes. */
+  crumplingNoteId: string | null;
   focusedNoteId: string | null;
   beforeFocus: CameraPose | null;
 
@@ -77,7 +91,10 @@ type AppState = {
 
   beginNoteDrag: (noteId: string) => void;
   setDragPin: (pin: Omit<DragPin, "noteId">) => void;
+  setDragOverTrash: (over: boolean) => void;
   endNoteDrag: () => Promise<void>;
+  deleteNote: (noteId: string) => Promise<void>;
+  crumpleAndDelete: (noteId: string) => Promise<void>;
 
   focusNote: (noteId: string, beforeFocus: CameraPose) => void;
   unfocusNote: () => Promise<void>;
@@ -96,6 +113,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   notes: [],
 
   drag: null,
+  dragOverTrash: false,
+  crumplingNoteId: null,
   focusedNoteId: null,
   beforeFocus: null,
 
@@ -134,12 +153,47 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDragPin: (pin) =>
     set((s) => (s.drag ? { drag: { ...s.drag, ...pin } } : {})),
 
+  setDragOverTrash: (over) => set({ dragOverTrash: over }),
+
+  deleteNote: async (noteId) => {
+    const { repo } = get();
+    // Optimistic remove from local state first so the Note disappears
+    // immediately; on persistence failure we roll back.
+    const previous = get().notes.find((n) => n.id === noteId);
+    if (!previous) return;
+    set((s) => ({ notes: s.notes.filter((n) => n.id !== noteId) }));
+    if (!repo) return;
+    try {
+      await repo.deleteNote(noteId);
+    } catch (err) {
+      console.warn("deleteNote failed; rolling back", err);
+      set((s) => ({ notes: [...s.notes, previous] }));
+    }
+  },
+
+  crumpleAndDelete: async (noteId) => {
+    // Drive the crumple animation in NoteMesh by setting the flag,
+    // then wait for the spring to settle, then remove the Note from
+    // local state + persist. Clearing the flag before the remove
+    // doesn't matter because the component unmounts on remove anyway.
+    set({ crumplingNoteId: noteId });
+    await new Promise((resolve) => setTimeout(resolve, CRUMPLE_DURATION_MS));
+    set({ crumplingNoteId: null });
+    await get().deleteNote(noteId);
+  },
+
   endNoteDrag: async () => {
-    const { drag, repo, notes } = get();
+    const { drag, repo, notes, dragOverTrash } = get();
     if (!drag) return;
     const note = notes.find((n) => n.id === drag.noteId);
-    set({ drag: null });
+    set({ drag: null, dragOverTrash: false });
     if (!note || !repo) return;
+
+    // Dropped on the trash → crumple animation, then delete.
+    if (dragOverTrash) {
+      await get().crumpleAndDelete(drag.noteId);
+      return;
+    }
 
     // No-op if the drag never left the original pin.
     if (
