@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { DoubleSide } from "three";
 import { useAppStore } from "../store";
+import { HoverTooltip } from "./HoverTooltip";
 import { PenProp } from "./PenProp";
 
 /**
@@ -32,6 +34,7 @@ export function RoomFurniture() {
   // top-mesh y=0.75 + top thickness 0.02). Pen lies along world +X
   // a few cm off-centre so it doesn't sit on top of nothing.
   const penOnDesk = currentTool !== "pen";
+  const [penHovered, setPenHovered] = useState(false);
 
   return (
     <group>
@@ -75,15 +78,37 @@ export function RoomFurniture() {
           desk). The group offsets the pen so its TIP sits on the desk
           surface, body lying flat across the wood. */}
       {penOnDesk && (
-        <group
-          position={[0.55, 0.772, -2.05]}
-          rotation={[0, 0, -Math.PI / 2]}
-        >
-          <PenProp
-            onPointerDown={(e) => {
+        <group position={[0.55, 0.772, -2.05]}>
+          {/* The pen itself, rotated to lie on its side along the
+              desk. The hover handlers wrap the rotated child so they
+              fire on any of the pen's three primitive meshes. */}
+          <group
+            rotation={[0, 0, -Math.PI / 2]}
+            onPointerOver={(e) => {
               e.stopPropagation();
-              setCurrentTool("pen");
+              setPenHovered(true);
+              document.body.style.cursor = "pointer";
             }}
+            onPointerOut={() => {
+              setPenHovered(false);
+              document.body.style.cursor = "";
+            }}
+          >
+            <PenProp
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                setCurrentTool("pen");
+                document.body.style.cursor = "";
+              }}
+            />
+          </group>
+          {/* Futuristic toast — appears above the pen on hover.
+              Positioned in the un-rotated parent frame so +Y is up. */}
+          <HoverTooltip
+            visible={penHovered}
+            title="Pencil"
+            subtitle="Click to start drawing"
+            position={[0, 0.05, 0]}
           />
         </group>
       )}
