@@ -2,11 +2,20 @@ import { memo, useEffect, useRef } from "react";
 import { Text } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { animated, useSpring } from "@react-spring/three";
+import { Group, Vector3 } from "three";
 import { paletteEntry } from "../lib/palette";
 import { noteLocalTransform } from "../lib/note-placement";
 import { createPaperTexture } from "../lib/note-paper-texture";
 import type { Note } from "../lib/room";
 import { useAppStore } from "../store";
+
+/**
+ * World position (metres) where the crumple animation lands — slightly
+ * above the trash bin's rim so the Note appears to fall into the bin.
+ * Must stay in sync with `TRASH_POSITION` in RoomScene.
+ */
+const TRASH_WORLD_POS = new Vector3(-1.2, 0.55, -2.2);
+const tmpTrashLocal = new Vector3();
 
 /**
  * Shared ruled-paper texture (client brief: "Giống giấy thật"). Built
@@ -71,7 +80,10 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
     height_cm: note.height_cm,
     surface_size_m: [surfaceWidthM, surfaceHeightM],
   });
-  const color = paletteEntry(note.color_id).base;
+  const palette = paletteEntry(note.color_id);
+  const color = palette.base;
+  const edgeColor = palette.shadow;
+  const groupRef = useRef<Group | null>(null);
   const beginNoteDrag = useAppStore((s) => s.beginNoteDrag);
   const drag = useAppStore((s) => s.drag);
   const isDragging = drag?.noteId === note.id;
@@ -232,7 +244,17 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
   // instead of snapping in 170 ms.
   useEffect(() => {
     if (!isCrumpling) return;
+    // Translate the trash bin's WORLD position into the surface's local
+    // frame — the same frame the Note's `px/py/pz` live in — so the
+    // spring can drive the Note across the room to the bin before the
+    // squash + spin completes.
+    const parent = groupRef.current?.parent;
+    tmpTrashLocal.copy(TRASH_WORLD_POS);
+    if (parent) parent.worldToLocal(tmpTrashLocal);
     springApi.start({
+      px: tmpTrashLocal.x,
+      py: tmpTrashLocal.y,
+      pz: tmpTrashLocal.z,
       sx: 0.25,
       sy: 0.05,
       sz: 0.4,
@@ -245,6 +267,7 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
 
   return (
     <animated.group
+      ref={groupRef}
       position-x={spring.px}
       position-y={spring.py}
       position-z={spring.pz}
@@ -255,6 +278,21 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
       scale-y={spring.sy}
       scale-z={spring.sz}
     >
+      {/* Darker backing plane (edge ring) — sits 0.2 mm behind the
+          paper face and 3 mm wider on each axis, so a thin ring in the
+          palette's `shadow` colour peeks out around the front face and
+          silhouettes the Note against warm-white walls. Cheap: one
+          extra plane per Note, no shadow caster. */}
+      <mesh position-z={-0.0002} receiveShadow>
+        <planeGeometry
+          args={[t.size_m[0] + 0.003, t.size_m[1] + 0.003]}
+        />
+        <meshStandardMaterial
+          color={edgeColor}
+          roughness={0.95}
+          metalness={0}
+        />
+      </mesh>
       <mesh
         castShadow
         receiveShadow

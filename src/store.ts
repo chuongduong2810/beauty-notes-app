@@ -1,16 +1,16 @@
-import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
+import { create } from "zustand";
 import type { CanvasRepository } from "./lib/canvas-repository";
+import { DebouncedSaver } from "./lib/debounced-saver";
+import { DEFAULT_NOTE_COLOR_ID } from "./lib/palette";
+import type { ScreenRect } from "./lib/project-note-rect";
 import {
-  DEFAULT_NOTE_WIDTH_CM,
   DEFAULT_NOTE_HEIGHT_CM,
+  DEFAULT_NOTE_WIDTH_CM,
+  type Note,
   type Room,
   type Surface,
-  type Note,
 } from "./lib/room";
-import { DEFAULT_NOTE_COLOR_ID } from "./lib/palette";
-import { DebouncedSaver } from "./lib/debounced-saver";
-import type { ScreenRect } from "./lib/project-note-rect";
 
 const NOTE_BODY_DEBOUNCE_MS = 500;
 /**
