@@ -3,6 +3,15 @@ import { create } from "zustand";
 import type { CanvasRepository } from "./lib/canvas-repository";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { DEFAULT_NOTE_COLOR_ID } from "./lib/palette";
+import {
+  appendStrokePoint as appendStrokePointReducer,
+  beginStroke as beginStrokeReducer,
+  endStroke as endStrokeReducer,
+  initialPenState,
+  setCurrentTool as setCurrentToolReducer,
+  type PenState,
+  type Tool,
+} from "./lib/pen-tool";
 import type { ScreenRect } from "./lib/project-note-rect";
 import {
   DEFAULT_NOTE_HEIGHT_CM,
@@ -11,6 +20,7 @@ import {
   type Room,
   type Surface,
 } from "./lib/room";
+import type { Annotation, StrokePoint } from "./lib/stroke";
 
 const NOTE_BODY_DEBOUNCE_MS = 500;
 /**
@@ -66,6 +76,22 @@ type AppState = {
   currentRoom: Room | null;
   surfaces: Surface[];
   notes: Note[];
+  annotations: Annotation[];
+
+  /**
+   * Pen-tool state machine (issue #35). `currentTool`, `pen`, and the
+   * in-progress Stroke live in a sub-object so the pure reducer in
+   * `lib/pen-tool.ts` can be tested in isolation.
+   */
+  penState: PenState;
+  /**
+   * Per-Surface Annotation id for the current Pen-mode session. When a
+   * User pen-downs on a Surface for the first time after entering Pen
+   * mode, we create one Annotation and reuse it for every Stroke on
+   * that Surface until the mode changes (ADR-0014). Cleared on mode
+   * switch and on Room load.
+   */
+  penSessionAnnotations: Record<string, string>;
 
   drag: DragPin | null;
   /** True while the active drag's cursor is over the trash bin mesh.
@@ -85,7 +111,17 @@ type AppState = {
 
   setSession: (session: Session | null) => void;
   setRepo: (repo: CanvasRepository) => void;
-  setRoom: (room: Room, surfaces: Surface[], notes: Note[]) => void;
+  setRoom: (
+    room: Room,
+    surfaces: Surface[],
+    notes: Note[],
+    annotations: Annotation[],
+  ) => void;
+
+  setCurrentTool: (tool: Tool) => void;
+  beginStroke: (surface_id: string, point: StrokePoint) => void;
+  appendStrokePoint: (point: StrokePoint) => void;
+  commitStroke: () => Promise<void>;
 
   createNoteAt: (surfaceId: string, u: number, v: number) => Promise<void>;
 
@@ -111,6 +147,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentRoom: null,
   surfaces: [],
   notes: [],
+  annotations: [],
+
+  penState: initialPenState,
+  penSessionAnnotations: {},
 
   drag: null,
   dragOverTrash: false,
@@ -123,8 +163,97 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSession: (session) => set({ session }),
   setRepo: (repo) => set({ repo }),
-  setRoom: (room, surfaces, notes) =>
-    set({ currentRoom: room, surfaces, notes, ready: true }),
+  setRoom: (room, surfaces, notes, annotations) =>
+    set({
+      currentRoom: room,
+      surfaces,
+      notes,
+      annotations,
+      ready: true,
+      // Entering a Room resets the Pen-tool state to "Note" mode (per
+      // ADR-0014 — mode-based input is global per session but resets
+      // on Room open).
+      penState: initialPenState,
+      penSessionAnnotations: {},
+    }),
+
+  setCurrentTool: (tool) =>
+    set((s) => ({
+      penState: setCurrentToolReducer(s.penState, tool),
+      penSessionAnnotations: {},
+    })),
+
+  beginStroke: (surface_id, point) =>
+    set((s) => ({
+      penState: beginStrokeReducer(s.penState, surface_id, point),
+    })),
+
+  appendStrokePoint: (point) =>
+    set((s) => ({
+      penState: appendStrokePointReducer(s.penState, point),
+    })),
+
+  commitStroke: async () => {
+    const { penState, annotations, penSessionAnnotations, repo, session } =
+      get();
+    const surfaceId = penState.inProgressStroke?.surface_id;
+    // Compute next stroke index on the (potentially soon-to-exist)
+    // Annotation: count existing strokes for whichever Annotation
+    // we'll use.
+    let annotationId = surfaceId ? penSessionAnnotations[surfaceId] : undefined;
+    const existingStrokeCount = annotationId
+      ? (annotations.find((a) => a.id === annotationId)?.strokes.length ?? 0)
+      : 0;
+    const { next, committed } = endStrokeReducer(penState, {
+      index: existingStrokeCount,
+    });
+    // Always clear the in-progress state, even for discarded gestures.
+    set({ penState: next });
+    if (!committed || !repo || !session || !surfaceId) return;
+
+    // Lazy-create the per-session Annotation for this Surface on the
+    // first committable Stroke.
+    let workingAnnotation: Annotation | undefined = annotationId
+      ? annotations.find((a) => a.id === annotationId)
+      : undefined;
+    if (!workingAnnotation) {
+      try {
+        workingAnnotation = await repo.insertAnnotation({
+          surface_id: surfaceId,
+          owner_id: session.user.id,
+        });
+      } catch (err) {
+        console.warn("insertAnnotation failed", err);
+        return;
+      }
+      annotationId = workingAnnotation.id;
+      set((s) => ({
+        annotations: [...s.annotations, workingAnnotation!],
+        penSessionAnnotations: {
+          ...s.penSessionAnnotations,
+          [surfaceId]: workingAnnotation!.id,
+        },
+      }));
+    }
+
+    try {
+      const stroke = await repo.insertStroke(annotationId!, {
+        points: committed.points,
+        color_id: committed.color_id,
+        width_id: committed.width_id,
+        index: committed.index,
+      });
+      set((s) => ({
+        annotations: s.annotations.map((a) =>
+          a.id === annotationId
+            ? { ...a, strokes: [...a.strokes, stroke] }
+            : a,
+        ),
+      }));
+    } catch (err) {
+      console.warn("insertStroke failed", err);
+    }
+  },
 
   createNoteAt: async (surfaceId, u, v) => {
     const { repo, session } = get();
