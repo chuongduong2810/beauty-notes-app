@@ -13,6 +13,7 @@ import { Atmosphere } from "./components/Atmosphere";
 import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { NoteEditor } from "./components/NoteEditor";
 import { RoomScene } from "./components/RoomScene";
+import { RoomFurniture } from "./components/RoomFurniture";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
@@ -337,6 +338,9 @@ export function App() {
             onNoteClick={onNoteClick}
           />
         )}
+        {/* Lamp, desk, plant — small set of primitive-only props so
+            the Room reads as a lived-in space. */}
+        <RoomFurniture />
         {/* MUST be the last Canvas child — EffectComposer wraps the scene
             it renders. multisampling=0 inside Atmosphere is what keeps
             R3F's pointer raycasting working (the previous attempt to
