@@ -49,9 +49,49 @@ const pillActive: CSSProperties = {
   color: "#1a1626",
 };
 
+const hidePillStyle: CSSProperties = {
+  ...pillBase,
+  padding: "6px 9px",
+  color: "rgba(255,255,255,0.55)",
+};
+
+const restoreChipStyle: CSSProperties = {
+  position: "fixed",
+  top: 16,
+  left: 16,
+  width: 32,
+  height: 32,
+  borderRadius: 999,
+  border: "none",
+  background: "rgba(20, 16, 28, 0.72)",
+  backdropFilter: "blur(8px)",
+  boxShadow: "0 4px 18px rgba(0,0,0,0.35)",
+  color: "rgba(255,255,255,0.85)",
+  fontSize: 16,
+  cursor: "pointer",
+  zIndex: 10,
+  userSelect: "none",
+};
+
 export function ToolPalette() {
   const currentTool = useAppStore((s) => s.penState.currentTool);
   const setCurrentTool = useAppStore((s) => s.setCurrentTool);
+  const visible = useAppStore((s) => s.toolbarVisible);
+  const setToolbarVisible = useAppStore((s) => s.setToolbarVisible);
+
+  if (!visible) {
+    return (
+      <button
+        type="button"
+        aria-label="Show toolbar"
+        title="Show toolbar"
+        style={restoreChipStyle}
+        onClick={() => setToolbarVisible(true)}
+      >
+        ☰
+      </button>
+    );
+  }
 
   return (
     <div style={containerStyle} data-testid="tool-palette">
@@ -70,6 +110,15 @@ export function ToolPalette() {
           </button>
         );
       })}
+      <button
+        type="button"
+        aria-label="Hide toolbar"
+        title="Hide toolbar"
+        style={hidePillStyle}
+        onClick={() => setToolbarVisible(false)}
+      >
+        ×
+      </button>
     </div>
   );
 }

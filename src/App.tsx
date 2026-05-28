@@ -243,6 +243,21 @@ export function App() {
     focusedNoteId,
   ]);
 
+  // Lock the orbit camera while a Pen Stroke is actively being drawn
+  // (#35 follow-up): the user is committing to a continuous gesture on
+  // a wall, so a stray drag-orbit mid-stroke would corrupt the polyline.
+  // Re-enabled on commit/cancel via the same effect.
+  const drawingStroke = useAppStore(
+    (s) => s.penState.inProgressStroke !== null,
+  );
+  useEffect(() => {
+    const c = orbitRef.current;
+    if (!c) return;
+    // Focus mode already owns `enabled` while focused, so don't fight it.
+    if (focusedNoteId) return;
+    c.enabled = !drawingStroke;
+  }, [drawingStroke, focusedNoteId]);
+
   // Escape exits focus.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -295,7 +310,16 @@ export function App() {
   );
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: ROOM_BACKDROP }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: ROOM_BACKDROP,
+        // Hide the system cursor while the user is drawing — the 3D
+        // pen mesh substitutes as the cursor on the wall (#35).
+        cursor: drawingStroke ? "none" : undefined,
+      }}
+    >
       <Canvas
         shadows={{ type: PCFSoftShadowMap }}
         camera={{ position: [0, 1.6, 1.8], fov: 60, near: 0.05, far: 50 }}

@@ -12,6 +12,7 @@ describe("ToolPalette — Note / Pen / Eraser mode switch (issue #35)", () => {
         inProgressStroke: null,
       },
       penSessionAnnotations: {},
+      toolbarVisible: true,
     });
   });
 
@@ -39,5 +40,18 @@ describe("ToolPalette — Note / Pen / Eraser mode switch (issue #35)", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  it("clicking 'Hide toolbar' collapses the palette to a restore chip; clicking the chip brings it back", () => {
+    render(<ToolPalette />);
+    fireEvent.click(screen.getByRole("button", { name: /hide toolbar/i }));
+    expect(useAppStore.getState().toolbarVisible).toBe(false);
+    // Pills should no longer be rendered.
+    expect(screen.queryByRole("button", { name: /pen/i })).toBeNull();
+    // Restore chip is present.
+    const restore = screen.getByRole("button", { name: /show toolbar/i });
+    fireEvent.click(restore);
+    expect(useAppStore.getState().toolbarVisible).toBe(true);
+    expect(screen.getByRole("button", { name: /pen/i })).toBeInTheDocument();
   });
 });

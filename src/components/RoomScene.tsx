@@ -6,6 +6,7 @@ import type { Room, Surface, Note, SurfaceKind } from "../lib/room";
 import { paletteEntry } from "../lib/palette";
 import { surfaceTransform } from "../lib/surface-geometry";
 import { NoteMesh } from "./NoteMesh";
+import { PenProp } from "./PenProp";
 import { StrokeMesh } from "./StrokeMesh";
 import { useAppStore } from "../store";
 
@@ -13,6 +14,42 @@ import { useAppStore } from "../store";
 const TRASH_POSITION: [number, number, number] = [-1.2, 0, -2.2];
 
 const isWall = (kind: SurfaceKind): boolean => kind.startsWith("wall_");
+
+/**
+ * Pen mesh that hovers at the cursor's wall hit while a Stroke is in
+ * progress (issue #35 follow-up). Mounted as a child of the active
+ * Surface mesh so the (u, v) → local-(x, y) math matches the StrokeMesh
+ * renderer, and so the Surface's world transform handles orienting the
+ * pen relative to whichever wall the user is drawing on.
+ *
+ * The PenProp's +Y is along the pen body — we rotate -90° around X so
+ * the body extends along the Surface's +Z (outward from the wall),
+ * then add a small writing-tilt away from perpendicular to read as
+ * "hand-held".
+ */
+function PenCursor({
+  surfaceWidthM,
+  surfaceHeightM,
+}: {
+  surfaceWidthM: number;
+  surfaceHeightM: number;
+}) {
+  const lastPoint = useAppStore((s) => {
+    const points = s.penState.inProgressStroke?.points;
+    return points && points.length > 0 ? points[points.length - 1] : null;
+  });
+  if (!lastPoint) return null;
+  const x = (lastPoint.u - 0.5) * surfaceWidthM;
+  const y = (lastPoint.v - 0.5) * surfaceHeightM;
+  return (
+    <group
+      position={[x, y, 0.002]}
+      rotation={[-Math.PI / 2 + 0.35, 0, 0.25]}
+    >
+      <PenProp raycastEnabled={false} />
+    </group>
+  );
+}
 
 /**
  * Live preview of the Stroke currently being drawn. Subscribes to the
@@ -327,10 +364,16 @@ export function RoomScene({
                 Surface it began on. Committed Strokes above use the
                 same renderer; this just feeds it the live points. */}
             {inProgressSurfaceId === s.id && (
-              <InProgressStrokePreview
-                surfaceWidthM={t.size[0]}
-                surfaceHeightM={t.size[1]}
-              />
+              <>
+                <InProgressStrokePreview
+                  surfaceWidthM={t.size[0]}
+                  surfaceHeightM={t.size[1]}
+                />
+                <PenCursor
+                  surfaceWidthM={t.size[0]}
+                  surfaceHeightM={t.size[1]}
+                />
+              </>
             )}
             {surfaceNotes.map((n) => (
               <NoteMesh

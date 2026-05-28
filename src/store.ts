@@ -20,7 +20,13 @@ import {
   type Room,
   type Surface,
 } from "./lib/room";
-import type { Annotation, StrokePoint } from "./lib/stroke";
+import type { Annotation, Stroke, StrokePoint } from "./lib/stroke";
+
+/** Tiny non-cryptographic id for optimistic Annotation / Stroke rows
+ *  that exist in local state before the repo round-trip resolves. */
+function tempId(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 const NOTE_BODY_DEBOUNCE_MS = 500;
 /**
@@ -84,6 +90,10 @@ type AppState = {
    * `lib/pen-tool.ts` can be tested in isolation.
    */
   penState: PenState;
+  /** Whether the floating ToolPalette chrome is shown. Hidden via the
+   *  "×" pill on the toolbar; restored via the small show-affordance
+   *  in its place. Defaults to true. */
+  toolbarVisible: boolean;
   /**
    * Per-Surface Annotation id for the current Pen-mode session. When a
    * User pen-downs on a Surface for the first time after entering Pen
@@ -119,6 +129,7 @@ type AppState = {
   ) => void;
 
   setCurrentTool: (tool: Tool) => void;
+  setToolbarVisible: (visible: boolean) => void;
   beginStroke: (surface_id: string, point: StrokePoint) => void;
   appendStrokePoint: (point: StrokePoint) => void;
   commitStroke: () => Promise<void>;
@@ -150,6 +161,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   annotations: [],
 
   penState: initialPenState,
+  toolbarVisible: true,
   penSessionAnnotations: {},
 
   drag: null,
@@ -183,6 +195,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       penSessionAnnotations: {},
     })),
 
+  setToolbarVisible: (visible) => set({ toolbarVisible: visible }),
+
   beginStroke: (surface_id, point) =>
     set((s) => ({
       penState: beginStrokeReducer(s.penState, surface_id, point),
@@ -197,61 +211,143 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { penState, annotations, penSessionAnnotations, repo, session } =
       get();
     const surfaceId = penState.inProgressStroke?.surface_id;
-    // Compute next stroke index on the (potentially soon-to-exist)
-    // Annotation: count existing strokes for whichever Annotation
-    // we'll use.
-    let annotationId = surfaceId ? penSessionAnnotations[surfaceId] : undefined;
-    const existingStrokeCount = annotationId
-      ? (annotations.find((a) => a.id === annotationId)?.strokes.length ?? 0)
+    const existingAnnotationId = surfaceId
+      ? penSessionAnnotations[surfaceId]
+      : undefined;
+    const existingStrokeCount = existingAnnotationId
+      ? (annotations.find((a) => a.id === existingAnnotationId)?.strokes
+          .length ?? 0)
       : 0;
     const { next, committed } = endStrokeReducer(penState, {
       index: existingStrokeCount,
     });
-    // Always clear the in-progress state, even for discarded gestures.
-    set({ penState: next });
-    if (!committed || !repo || !session || !surfaceId) return;
 
-    // Lazy-create the per-session Annotation for this Surface on the
-    // first committable Stroke.
-    let workingAnnotation: Annotation | undefined = annotationId
-      ? annotations.find((a) => a.id === annotationId)
-      : undefined;
-    if (!workingAnnotation) {
-      try {
-        workingAnnotation = await repo.insertAnnotation({
+    // Optimistic insert: synchronously add the just-drawn Stroke (and
+    // its Annotation, if the session doesn't have one yet) so the
+    // polyline stays on screen between pointer-up and the repo
+    // round-trip — fixes the "flicker on save" UX.
+    //
+    // We swap in the real ids when the repo calls resolve, and roll
+    // back the optimistic rows on persistence failure.
+    if (!committed || !surfaceId) {
+      set({ penState: next });
+      return;
+    }
+
+    const optimisticStrokeId = tempId("pending-stroke");
+    const isNewAnnotation = !existingAnnotationId;
+    const optimisticAnnotationId = isNewAnnotation
+      ? tempId("pending-annotation")
+      : existingAnnotationId!;
+    const now = new Date().toISOString();
+    const optimisticStroke: Stroke = {
+      id: optimisticStrokeId,
+      annotation_id: optimisticAnnotationId,
+      points: committed.points,
+      color_id: committed.color_id,
+      width_id: committed.width_id,
+      index: committed.index,
+      created_at: now,
+    };
+
+    set((s) => {
+      if (isNewAnnotation) {
+        const placeholder: Annotation = {
+          id: optimisticAnnotationId,
+          surface_id: surfaceId,
+          owner_id: session?.user.id ?? "local",
+          strokes: [optimisticStroke],
+          created_at: now,
+          updated_at: now,
+        };
+        return {
+          penState: next,
+          annotations: [...s.annotations, placeholder],
+          penSessionAnnotations: {
+            ...s.penSessionAnnotations,
+            [surfaceId]: optimisticAnnotationId,
+          },
+        };
+      }
+      return {
+        penState: next,
+        annotations: s.annotations.map((a) =>
+          a.id === optimisticAnnotationId
+            ? { ...a, strokes: [...a.strokes, optimisticStroke] }
+            : a,
+        ),
+      };
+    });
+
+    if (!repo || !session) return;
+
+    try {
+      let realAnnotationId = existingAnnotationId;
+      if (isNewAnnotation) {
+        const ann = await repo.insertAnnotation({
           surface_id: surfaceId,
           owner_id: session.user.id,
         });
-      } catch (err) {
-        console.warn("insertAnnotation failed", err);
-        return;
+        realAnnotationId = ann.id;
+        // Reconcile placeholder Annotation id → real id.
+        set((s) => ({
+          annotations: s.annotations.map((a) =>
+            a.id === optimisticAnnotationId
+              ? {
+                  ...a,
+                  id: ann.id,
+                  created_at: ann.created_at,
+                  updated_at: ann.updated_at,
+                  strokes: a.strokes.map((st) =>
+                    st.annotation_id === optimisticAnnotationId
+                      ? { ...st, annotation_id: ann.id }
+                      : st,
+                  ),
+                }
+              : a,
+          ),
+          penSessionAnnotations: {
+            ...s.penSessionAnnotations,
+            [surfaceId]: ann.id,
+          },
+        }));
       }
-      annotationId = workingAnnotation.id;
-      set((s) => ({
-        annotations: [...s.annotations, workingAnnotation!],
-        penSessionAnnotations: {
-          ...s.penSessionAnnotations,
-          [surfaceId]: workingAnnotation!.id,
-        },
-      }));
-    }
-
-    try {
-      const stroke = await repo.insertStroke(annotationId!, {
+      const realStroke = await repo.insertStroke(realAnnotationId!, {
         points: committed.points,
         color_id: committed.color_id,
         width_id: committed.width_id,
         index: committed.index,
       });
+      // Reconcile placeholder Stroke → real Stroke.
       set((s) => ({
         annotations: s.annotations.map((a) =>
-          a.id === annotationId
-            ? { ...a, strokes: [...a.strokes, stroke] }
+          a.id === realAnnotationId
+            ? {
+                ...a,
+                strokes: a.strokes.map((st) =>
+                  st.id === optimisticStrokeId ? realStroke : st,
+                ),
+              }
             : a,
         ),
       }));
     } catch (err) {
-      console.warn("insertStroke failed", err);
+      console.warn("commitStroke persistence failed; rolling back", err);
+      set((s) => ({
+        annotations: isNewAnnotation
+          ? s.annotations.filter((a) => a.id !== optimisticAnnotationId)
+          : s.annotations.map((a) => ({
+              ...a,
+              strokes: a.strokes.filter((st) => st.id !== optimisticStrokeId),
+            })),
+        penSessionAnnotations: isNewAnnotation && surfaceId
+          ? Object.fromEntries(
+              Object.entries(s.penSessionAnnotations).filter(
+                ([k]) => k !== surfaceId,
+              ),
+            )
+          : s.penSessionAnnotations,
+      }));
     }
   },
 
