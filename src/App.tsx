@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
+import { Atmosphere } from "./components/Atmosphere";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import {
   ACESFilmicToneMapping,
@@ -295,6 +296,11 @@ export function App() {
             onNoteClick={onNoteClick}
           />
         )}
+        {/* MUST be the last Canvas child — EffectComposer wraps the scene
+            it renders. multisampling=0 inside Atmosphere is what keeps
+            R3F's pointer raycasting working (the previous attempt to
+            wire postprocessing broke click-to-focus — see S237). */}
+        <Atmosphere />
       </Canvas>
       <NoteEditor />
     </div>
