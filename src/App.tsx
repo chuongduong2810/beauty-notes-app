@@ -376,6 +376,16 @@ export function App() {
           // room centre — so the user can never wheel "into" a wall.
           // Standard Figma / Blender / Photoshop zoom-to-cursor.
           zoomToCursor
+          // CRITICAL pairing with zoomToCursor: OrbitControls' default
+          // target update after a cursor zoom intersects camera-forward
+          // with a HORIZONTAL plane through the old target. That fails
+          // when the camera is looking near-horizontally — exactly the
+          // "user staring at a wall" case — and falls back to lookAt,
+          // leaving the target glued to room centre. Enabling screen-
+          // space panning swaps that for `target = camera + forward *
+          // newRadius`, which works at any angle and lets the pivot
+          // actually migrate to the wall under the cursor.
+          screenSpacePanning
           onChange={onCameraChange}
         />
         <FocusDriver orbitRef={orbitRef} />
