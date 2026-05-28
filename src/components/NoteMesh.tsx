@@ -135,7 +135,11 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
     rx: 0,
     ry: 0,
     rz: 0,
-    scale: 1,
+    // Non-uniform scale lets the crumple squash the Note along Y faster
+    // than X, which reads as "paper being balled up" rather than "shrunk".
+    sx: 1,
+    sy: 1,
+    sz: 1,
     config: { mass: 0.6, tension: 220, friction: 16 },
   }));
 
@@ -219,18 +223,23 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
   ]);
 
   // Crumple animation when this Note has been dropped on the trash.
-  // Drives a quick scale-down + tumble (Z spin + X tilt) on the same
-  // spring used by the drag physics. The Note is removed from state
-  // ~600 ms later by `crumpleAndDelete` in the store, at which point
-  // this component unmounts.
+  // Non-uniform squash (sy << sx) sells the "balled-up paper" read on
+  // a flat plane — uniform scale just looks like the Note is shrinking.
+  // Two full Z spins + heavy tumble on X/Y so the rotation is clearly
+  // visible during the 900 ms window before the Note is removed from
+  // state and this component unmounts. Spring config is intentionally
+  // soft (low tension, high mass) so the motion lasts the full window
+  // instead of snapping in 170 ms.
   useEffect(() => {
     if (!isCrumpling) return;
     springApi.start({
-      scale: 0.05,
-      rz: Math.PI * 2,
-      rx: Math.PI * 0.45,
-      ry: Math.PI * 0.2,
-      config: { mass: 0.3, tension: 220, friction: 14 },
+      sx: 0.25,
+      sy: 0.05,
+      sz: 0.4,
+      rz: Math.PI * 4,
+      rx: Math.PI * 0.7,
+      ry: Math.PI * 0.4,
+      config: { mass: 0.8, tension: 65, friction: 12 },
     });
   }, [isCrumpling, springApi]);
 
@@ -242,7 +251,9 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
       rotation-x={spring.rx}
       rotation-y={spring.ry}
       rotation-z={spring.rz}
-      scale={spring.scale}
+      scale-x={spring.sx}
+      scale-y={spring.sy}
+      scale-z={spring.sz}
     >
       <mesh
         castShadow

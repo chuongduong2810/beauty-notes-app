@@ -18,7 +18,7 @@ const NOTE_BODY_DEBOUNCE_MS = 500;
  * actually removed from state. Matches the spring settle time in
  * NoteMesh's crumple useEffect. Slightly longer to be safe.
  */
-const CRUMPLE_DURATION_MS = 600;
+const CRUMPLE_DURATION_MS = 900;
 
 // Module-scope debounced saver for Note bodies (ADR-0005). One channel
 // shared across all editing sessions; latest body wins.
