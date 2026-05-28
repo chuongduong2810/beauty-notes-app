@@ -220,6 +220,22 @@ export function App() {
     };
   }, [cameraSaver]);
 
+  // Set the initial orbit target ONCE on mount via the ref. We
+  // deliberately do NOT pass `target={ORBIT_TARGET}` as a JSX prop on
+  // <OrbitControls> — R3F's reconciler re-applies Vector3-typed props
+  // on every render by calling `.set(...)` in-place. That wiped out
+  // zoomToCursor + screenSpacePanning's per-tick target migration
+  // and pinned the target permanently at room centre, so wheel-zoom
+  // could only collapse the camera onto the centre instead of
+  // dollying toward a wall. Setting it once here lets OrbitControls
+  // own the target from then on.
+  useEffect(() => {
+    const c = orbitRef.current;
+    if (!c) return;
+    c.target.set(ORBIT_TARGET[0], ORBIT_TARGET[1], ORBIT_TARGET[2]);
+    c.update();
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     bootstrapSessionAndRoom()
@@ -360,7 +376,10 @@ export function App() {
       >
         <OrbitControls
           ref={orbitRef}
-          target={ORBIT_TARGET}
+          // NOTE: `target` is deliberately NOT a prop here — see the
+          // imperative-set useEffect above. Passing it as a JSX prop
+          // makes R3F call target.set(...) on every render, wiping
+          // out zoomToCursor's target migration each frame.
           enableDamping
           dampingFactor={0.05}
           enablePan={false}
