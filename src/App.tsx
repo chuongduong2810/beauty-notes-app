@@ -5,6 +5,7 @@ import { Atmosphere } from "./components/Atmosphere";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import {
   ACESFilmicToneMapping,
+  type DirectionalLight,
   PCFSoftShadowMap,
   Spherical,
   Vector3,
@@ -18,6 +19,7 @@ import { NoteEditor } from "./components/NoteEditor";
 import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
+import { shadowFollowPose } from "./lib/shadow-follow";
 
 const ROOM_BACKDROP = "#0e0b16";
 
@@ -44,6 +46,59 @@ type CameraPose = { yaw: number; pitch: number; distance: number };
  *  - on un-focus, lerps both back to the snapshot stored in
  *    `beforeFocus` and re-enables OrbitControls when settled
  */
+/**
+ * The warm "window" key light, with its shadow camera frustum following
+ * the orbit target every frame (issue #34). This keeps shadow-map
+ * resolution concentrated wherever the user is looking and lets us
+ * tighten the frustum bounds for sharper penumbras at the same map size.
+ *
+ * The light DIRECTION is preserved across orbit moves (see
+ * `shadowFollowPose`): the light's position and lookAt translate by the
+ * same delta when the orbit target changes, so a Note on the north wall
+ * is lit at the same angle whether the user is looking up at it or down.
+ */
+function KeyLight({
+  orbitRef,
+}: {
+  orbitRef: React.MutableRefObject<OrbitControlsImpl | null>;
+}) {
+  const lightRef = useRef<DirectionalLight | null>(null);
+
+  useFrame(() => {
+    const orbit = orbitRef.current;
+    const light = lightRef.current;
+    if (!orbit || !light) return;
+    const pose = shadowFollowPose([
+      orbit.target.x,
+      orbit.target.y,
+      orbit.target.z,
+    ]);
+    light.position.set(...pose.position);
+    light.target.position.set(...pose.lookAt);
+    light.target.updateMatrixWorld();
+  });
+
+  return (
+    <>
+      <directionalLight
+        ref={lightRef}
+        intensity={1.1}
+        color="#ffe2b0"
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-bias={-0.0005}
+        shadow-camera-near={0.1}
+        shadow-camera-far={6}
+        shadow-camera-left={-1.5}
+        shadow-camera-right={1.5}
+        shadow-camera-top={1.5}
+        shadow-camera-bottom={-1.5}
+      />
+    </>
+  );
+}
+
 function FocusDriver({
   orbitRef,
 }: {
@@ -270,24 +325,10 @@ export function App() {
         {/* Warm hemispheric fill — sky from above, slightly cooler floor
             bounce. Low intensity for a calm tone. */}
         <hemisphereLight args={["#ffe6c2", "#4f3f2f", 0.5]} />
-        {/* "Window" key light at ~3000 K from behind-camera-right.
-            castShadow + PCFSoftShadowMap (Canvas-level) give soft
-            penumbras. Bias prevents shadow acne at Note standoff. */}
-        <directionalLight
-          position={[1.8, 2.6, 2.2]}
-          intensity={1.1}
-          color="#ffe2b0"
-          castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-          shadow-bias={-0.0005}
-          shadow-camera-near={0.1}
-          shadow-camera-far={15}
-          shadow-camera-left={-4}
-          shadow-camera-right={4}
-          shadow-camera-top={4}
-          shadow-camera-bottom={-4}
-        />
+        {/* "Window" key light at ~3000 K. Position + shadow frustum
+            follow the orbit target every frame (#34) so shadow-map
+            resolution stays where the user is looking. */}
+        <KeyLight orbitRef={orbitRef} />
         {ready && room && (
           <RoomScene
             room={room}
