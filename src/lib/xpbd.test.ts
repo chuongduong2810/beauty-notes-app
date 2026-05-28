@@ -2,6 +2,36 @@ import { describe, it, expect } from "vitest";
 import { createCloth, step } from "./xpbd";
 
 describe("xpbd solver — gravity integration (#19)", () => {
+  it("a 4-corner-pinned cloth stays flat under gravity (shear constraints hold the rectangle taut)", () => {
+    // 2-segment cloth: 3x3 grid, so there's an interior particle (idx 4)
+    // that's not on any pinned edge. With only structural edges this
+    // interior particle would sag under gravity; with shear (diagonals)
+    // it should stay at z=0 and near its original (x, y).
+    const W = 0.1;
+    const H = 0.1;
+    const cloth = createCloth({
+      width: W,
+      height: H,
+      segments: 2,
+      // Indices for 3x3 grid: corners at 0, 2, 6, 8.
+      pins: [0, 2, 6, 8],
+    });
+    const startX = cloth.positions[4 * 3];
+    const startY = cloth.positions[4 * 3 + 1];
+
+    for (let i = 0; i < 200; i++) step(cloth, 1 / 60);
+
+    const interiorX = cloth.positions[4 * 3];
+    const interiorY = cloth.positions[4 * 3 + 1];
+    const interiorZ = cloth.positions[4 * 3 + 2];
+
+    // Interior must not sag noticeably — within 5% of the cloth's
+    // diagonal would be "fishnet", under 1% is "paper".
+    expect(Math.abs(interiorX - startX)).toBeLessThan(W * 0.01);
+    expect(Math.abs(interiorY - startY)).toBeLessThan(H * 0.01);
+    expect(Math.abs(interiorZ)).toBeLessThan(W * 0.01);
+  });
+
   it("connected particles relax toward their rest length (distance constraint)", () => {
     // 1-segment cloth = 2x2 grid. Pin the top-left only and let the
     // bottom-left fall under gravity — the structural edge between

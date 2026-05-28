@@ -83,8 +83,15 @@ export function createCloth(params: ClothParams): ClothState {
   const pinned = new Array<boolean>(particleCount).fill(false);
   for (const i of params.pins) pinned[i] = true;
 
-  // Structural edges: horizontal + vertical neighbours. Bending and
-  // shear constraints (diagonals, every-other) are follow-ups.
+  // Constraint topology:
+  // - Structural: horizontal + vertical neighbours (length = dx / dy).
+  //   Resists stretch along the cloth grid.
+  // - Shear: both diagonals of every cell (length = √(dx² + dy²)).
+  //   Resists scissoring — without these the cloth behaves like a
+  //   fishnet and a 4-corner-pinned paper sags into a teardrop.
+  // Bending constraints (every-other vertex) are a follow-up for the
+  // single-pin / push-pin case where heavy sag would otherwise look
+  // like cloth, not paper.
   const edges: Edge[] = [];
   const pushEdge = (a: number, b: number) => {
     const oa = a * 3;
@@ -94,11 +101,23 @@ export function createCloth(params: ClothParams): ClothState {
     const dz = positions[ob + 2] - positions[oa + 2];
     edges.push({ i: a, j: b, restLength: Math.hypot(dx, dy, dz) });
   };
+  // Structural.
   for (let j = 0; j < verticesPerSide; j++) {
     for (let i = 0; i < verticesPerSide; i++) {
       const me = j * verticesPerSide + i;
       if (i + 1 < verticesPerSide) pushEdge(me, j * verticesPerSide + (i + 1));
       if (j + 1 < verticesPerSide) pushEdge(me, (j + 1) * verticesPerSide + i);
+    }
+  }
+  // Shear — both diagonals per cell.
+  for (let j = 0; j < params.segments; j++) {
+    for (let i = 0; i < params.segments; i++) {
+      const a = j * verticesPerSide + i;        // BL
+      const b = a + 1;                          // BR
+      const c = a + verticesPerSide;            // TL
+      const d = c + 1;                          // TR
+      pushEdge(a, d); // BL → TR
+      pushEdge(b, c); // BR → TL
     }
   }
 
