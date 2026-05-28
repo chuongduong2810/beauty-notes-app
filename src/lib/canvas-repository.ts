@@ -38,4 +38,6 @@ export interface CanvasRepository {
   ): Promise<Note>;
   /** Replace a Note's body text. Debounced commit from Focus editing. */
   updateNoteBody(id: string, body: string): Promise<Note>;
+  /** Permanently remove a Note. Called when the user drops it on the trash. */
+  deleteNote(id: string): Promise<void>;
 }

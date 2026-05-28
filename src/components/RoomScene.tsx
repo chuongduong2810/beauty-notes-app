@@ -8,6 +8,9 @@ import { surfaceTransform } from "../lib/surface-geometry";
 import { NoteMesh } from "./NoteMesh";
 import { useAppStore } from "../store";
 
+/** Where the trash bin sits on the floor (world coordinates, metres). */
+const TRASH_POSITION: [number, number, number] = [-1.2, 0, -2.2];
+
 const isWall = (kind: SurfaceKind): boolean => kind.startsWith("wall_");
 
 /**
@@ -37,9 +40,12 @@ export function RoomScene({
   const createNoteAt = useAppStore((s) => s.createNoteAt);
   const drag = useAppStore((s) => s.drag);
   const setDragPin = useAppStore((s) => s.setDragPin);
+  const setDragOverTrash = useAppStore((s) => s.setDragOverTrash);
+  const dragOverTrash = useAppStore((s) => s.dragOverTrash);
   const endNoteDrag = useAppStore((s) => s.endNoteDrag);
 
   const surfaceMeshes = useRef<Map<string, Mesh>>(new Map());
+  const trashMeshRef = useRef<Mesh | null>(null);
   const { camera, gl } = useThree();
   const raycaster = useMemo(() => new Raycaster(), []);
 
@@ -56,6 +62,21 @@ export function RoomScene({
         -((e.clientY - rect.top) / rect.height) * 2 + 1,
       );
       raycaster.setFromCamera(ndc, camera);
+
+      // Trash bin first — if the cursor is over it, flag the drop as a
+      // delete and skip the surface re-pin for this frame.
+      if (trashMeshRef.current) {
+        const trashHits = raycaster.intersectObject(
+          trashMeshRef.current,
+          false,
+        );
+        if (trashHits.length > 0) {
+          setDragOverTrash(true);
+          return;
+        }
+      }
+      setDragOverTrash(false);
+
       const meshes = [...surfaceMeshes.current.values()];
       const hits = raycaster.intersectObjects(meshes, false);
       const hit = hits[0];
@@ -76,7 +97,7 @@ export function RoomScene({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [drag, camera, gl, raycaster, setDragPin, endNoteDrag]);
+  }, [drag, camera, gl, raycaster, setDragPin, setDragOverTrash, endNoteDrag]);
 
   // Bucket notes by their effective surface_id (drag overrides the
   // persisted value so the Note follows the cursor across walls).
@@ -96,6 +117,42 @@ export function RoomScene({
 
   return (
     <group>
+      {/* Trash bin on the floor — drag a Note onto it to delete. While
+          a drag is active and the cursor is over this mesh, it gains
+          a red emissive glow to signal "drop here to remove". */}
+      <group position={TRASH_POSITION}>
+        <mesh
+          ref={trashMeshRef}
+          castShadow
+          receiveShadow
+          position={[0, 0.17, 0]}
+        >
+          <cylinderGeometry args={[0.16, 0.13, 0.34, 24, 1, true]} />
+          <meshStandardMaterial
+            color={dragOverTrash ? "#c8302c" : "#3a3a3a"}
+            emissive={dragOverTrash ? "#c8302c" : "#000000"}
+            emissiveIntensity={dragOverTrash ? 0.4 : 0}
+            roughness={0.5}
+            metalness={0.4}
+            side={2}
+          />
+        </mesh>
+        {/* A thin rim around the top edge for visual weight. */}
+        <mesh position={[0, 0.34, 0]} castShadow receiveShadow>
+          <torusGeometry args={[0.16, 0.012, 8, 24]} />
+          <meshStandardMaterial
+            color="#2a2a2a"
+            roughness={0.5}
+            metalness={0.5}
+          />
+        </mesh>
+        {/* A dark disc inside the bin (the "interior"). */}
+        <mesh position={[0, 0.01, 0]} receiveShadow>
+          <cylinderGeometry args={[0.13, 0.13, 0.005, 24]} />
+          <meshStandardMaterial color="#1a1a1a" roughness={0.9} />
+        </mesh>
+      </group>
+
       {surfaces.map((s) => {
         const t = surfaceTransform(
           s.kind,

@@ -62,6 +62,10 @@ type AppState = {
   notes: Note[];
 
   drag: DragPin | null;
+  /** True while the active drag's cursor is over the trash bin mesh.
+   *  Set by RoomScene's window-pointermove raycast; consumed by
+   *  endNoteDrag to switch from "re-pin" to "delete". */
+  dragOverTrash: boolean;
   focusedNoteId: string | null;
   beforeFocus: CameraPose | null;
 
@@ -77,7 +81,9 @@ type AppState = {
 
   beginNoteDrag: (noteId: string) => void;
   setDragPin: (pin: Omit<DragPin, "noteId">) => void;
+  setDragOverTrash: (over: boolean) => void;
   endNoteDrag: () => Promise<void>;
+  deleteNote: (noteId: string) => Promise<void>;
 
   focusNote: (noteId: string, beforeFocus: CameraPose) => void;
   unfocusNote: () => Promise<void>;
@@ -96,6 +102,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   notes: [],
 
   drag: null,
+  dragOverTrash: false,
   focusedNoteId: null,
   beforeFocus: null,
 
@@ -134,12 +141,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDragPin: (pin) =>
     set((s) => (s.drag ? { drag: { ...s.drag, ...pin } } : {})),
 
+  setDragOverTrash: (over) => set({ dragOverTrash: over }),
+
+  deleteNote: async (noteId) => {
+    const { repo } = get();
+    // Optimistic remove from local state first so the Note disappears
+    // immediately; on persistence failure we roll back.
+    const previous = get().notes.find((n) => n.id === noteId);
+    if (!previous) return;
+    set((s) => ({ notes: s.notes.filter((n) => n.id !== noteId) }));
+    if (!repo) return;
+    try {
+      await repo.deleteNote(noteId);
+    } catch (err) {
+      console.warn("deleteNote failed; rolling back", err);
+      set((s) => ({ notes: [...s.notes, previous] }));
+    }
+  },
+
   endNoteDrag: async () => {
-    const { drag, repo, notes } = get();
+    const { drag, repo, notes, dragOverTrash } = get();
     if (!drag) return;
     const note = notes.find((n) => n.id === drag.noteId);
-    set({ drag: null });
+    set({ drag: null, dragOverTrash: false });
     if (!note || !repo) return;
+
+    // Dropped on the trash → delete instead of re-pin.
+    if (dragOverTrash) {
+      await get().deleteNote(drag.noteId);
+      return;
+    }
 
     // No-op if the drag never left the original pin.
     if (
