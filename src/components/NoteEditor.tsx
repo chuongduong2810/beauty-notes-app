@@ -1,29 +1,33 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import { useAppStore } from "../store";
-
-const FONT_SIZE_PX = 18;
-const LINE_HEIGHT = 1.3;
-const TEXT_PAD_PX = 16;
+import {
+  TEXT_FONT_SIZE_M,
+  TEXT_LINE_HEIGHT,
+  TEXT_PAD_M,
+} from "./NoteMesh";
 
 /**
- * Invisible DOM textarea overlay for editing a Note's body (ADR-0002,
- * issue #18). Reads `editingNoteId` and `editingRect` from the store
- * and, when both are set, renders a single transparent textarea
- * positioned over the focused Note's projected screen rect.
+ * DOM textarea overlay for editing a Note's body (ADR-0002, issue #18).
+ * Reads `editingNoteId` and `editingRect` from the store and, when both
+ * are set, renders a textarea positioned over the focused Note's
+ * projected screen rect.
  *
- * The textarea is the real focusable element — keeping it as a DOM
- * input keeps IME composition, spellcheck, clipboard paste, and the
- * iPadOS soft keyboard working. The SDF text underneath mirrors every
- * keystroke through the store (within one frame).
+ * During editing the WebGL <Text> for the focused note is hidden (see
+ * NoteMesh) and the textarea IS the visible text — same Lora font, same
+ * size and padding (scaled from the projected rect), same dark colour.
+ * This keeps native browser selection (Ctrl+A, click-drag) aligned with
+ * the glyphs the user sees, and keeps IME composition, clipboard paste,
+ * and the iPadOS soft keyboard working because the textarea is still a
+ * real DOM input. Every keystroke mirrors into the store so the WebGL
+ * <Text> is up to date the moment editing ends.
  */
 export function NoteEditor() {
   const editingNoteId = useAppStore((s) => s.editingNoteId);
   const editingRect = useAppStore((s) => s.editingRect);
-  const body = useAppStore((s) =>
-    editingNoteId
-      ? (s.notes.find((n) => n.id === editingNoteId)?.body ?? "")
-      : "",
+  const editingNote = useAppStore((s) =>
+    editingNoteId ? s.notes.find((n) => n.id === editingNoteId) : undefined,
   );
+  const body = editingNote?.body ?? "";
   const setEditingBody = useAppStore((s) => s.setEditingBody);
   const unfocusNote = useAppStore((s) => s.unfocusNote);
 
@@ -38,7 +42,17 @@ export function NoteEditor() {
     }
   }, [editingNoteId]);
 
-  if (!editingNoteId || !editingRect) return null;
+  if (!editingNoteId || !editingRect || !editingNote) return null;
+
+  // Match the projected WebGL <Text> exactly: the note is `height_cm`
+  // tall in world space, projected to `editingRect.height` px on screen
+  // — so 1 world metre maps to `editingRect.height / (height_cm / 100)`
+  // pixels. Apply the same ratio to TEXT_FONT_SIZE_M and TEXT_PAD_M so
+  // the DOM textarea text lines up with the WebGL render the user sees
+  // when the note isn't being edited.
+  const pxPerMetre = editingRect.height / (editingNote.height_cm / 100);
+  const fontSizePx = TEXT_FONT_SIZE_M * pxPerMetre;
+  const padPx = TEXT_PAD_M * pxPerMetre;
 
   const style: CSSProperties = {
     position: "fixed",
@@ -46,34 +60,44 @@ export function NoteEditor() {
     top: editingRect.top,
     width: editingRect.width,
     height: editingRect.height,
-    padding: TEXT_PAD_PX,
-    fontSize: FONT_SIZE_PX,
-    lineHeight: LINE_HEIGHT,
-    fontFamily: "system-ui, sans-serif",
+    padding: padPx,
+    fontSize: fontSizePx,
+    lineHeight: TEXT_LINE_HEIGHT,
+    // Match the WebGL <Text> font (Lora, loaded in index.html) so the
+    // textarea's line-wrap mirrors what troika renders.
+    fontFamily: '"Lora", Georgia, serif',
     border: "none",
     outline: "none",
     resize: "none",
     background: "transparent",
-    color: "transparent",
-    caretColor: "transparent",
+    // The textarea IS the visible text during editing (the WebGL <Text>
+    // is hidden for this note in NoteMesh). This keeps native browser
+    // selection — Ctrl+A, click-drag — aligned with the glyphs the user
+    // sees, instead of painting blue rectangles offset from a different
+    // WebGL render.
+    color: "#2a2330",
+    caretColor: "#2a2330",
     boxSizing: "border-box",
     zIndex: 20,
     overflow: "hidden",
     margin: 0,
+    // Match troika's overflowWrap="break-word" so the textarea breaks
+    // long unbroken tokens at the same character positions the WebGL
+    // text does (so caret position stays aligned with glyph position).
+    overflowWrap: "anywhere",
+    wordBreak: "break-word",
   };
 
   return (
     <textarea
       ref={textareaRef}
+      data-note-editor
       style={style}
       value={body}
       autoFocus
-      // The textarea is invisible (transparent text/caret/background)
-      // so any browser-native spellcheck / autocorrect / autocapitalise
-      // UI would just leak as floating red dashes or capitalised letters
-      // with no underlying text to attach to — especially for
-      // non-English (Vietnamese, etc.) where every word reads as
-      // misspelled. All disabled.
+      // Disable browser spellcheck/autocorrect/autocapitalise — for
+      // non-English (Vietnamese, etc.) every word reads as misspelled
+      // and the red underlines just visually pollute the note.
       spellCheck={false}
       autoCorrect="off"
       autoComplete="off"

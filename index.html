@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Beauty Notes</title>
+    <!-- Lora — warm serif, claude.ai-style — for the (invisible) DOM
+         textarea. Google Fonts CDN serves WOFF2 which the browser uses
+         natively. The WebGL SDF text in NoteMesh.tsx loads the same
+         font as a self-hosted TTF from /public/fonts/, because troika
+         can't follow the Google CSS link (it needs a direct TTF URL). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
     <style>
       html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: #0e0b16; }
     </style>
