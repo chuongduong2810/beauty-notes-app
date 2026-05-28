@@ -1,5 +1,19 @@
 import type { ThreeEvent } from "@react-three/fiber";
 import type { ReactNode } from "react";
+import { Mesh as ThreeMesh } from "three";
+
+/**
+ * Three.js's default Mesh.prototype.raycast. We pass this explicitly
+ * instead of `undefined` when raycast is enabled — R3F's applyProps
+ * assigns whatever value you give it, and assigning `undefined`
+ * creates an own property on the instance that shadows the prototype
+ * method. The next raycast then calls `instance.raycast()` on
+ * undefined and throws "raycast is not a function". This constant
+ * lets us toggle the prop between "enabled" and "noop" without ever
+ * passing undefined.
+ */
+const DEFAULT_MESH_RAYCAST = ThreeMesh.prototype.raycast;
+const NO_RAYCAST = () => null;
 
 /**
  * A simple 3D pen primitive — three stacked cylinder/cone meshes that
@@ -48,7 +62,7 @@ export function PenProp({
    *  hover halo or a "pick me up" hint without cluttering this file. */
   children?: ReactNode;
 }) {
-  const blockRay = raycastEnabled ? undefined : () => null;
+  const raycast = raycastEnabled ? DEFAULT_MESH_RAYCAST : NO_RAYCAST;
   return (
     <group>
       {/* Tip at origin (group y=0), narrow cone pointing -Y so the
@@ -58,7 +72,7 @@ export function PenProp({
         position={[0, PEN_TIP_LENGTH_M / 2, 0]}
         onPointerDown={onPointerDown}
         onClick={onClick}
-        raycast={blockRay}
+        raycast={raycast}
       >
         <coneGeometry args={[PEN_TIP_RADIUS_M, PEN_TIP_LENGTH_M, 12]} />
         <meshStandardMaterial
@@ -73,7 +87,7 @@ export function PenProp({
         position={[0, PEN_TIP_LENGTH_M + PEN_BODY_LENGTH_M / 2, 0]}
         onPointerDown={onPointerDown}
         onClick={onClick}
-        raycast={blockRay}
+        raycast={raycast}
       >
         <cylinderGeometry
           args={[PEN_BODY_RADIUS_M, PEN_BODY_RADIUS_M, PEN_BODY_LENGTH_M, 16]}
@@ -95,7 +109,7 @@ export function PenProp({
         ]}
         onPointerDown={onPointerDown}
         onClick={onClick}
-        raycast={blockRay}
+        raycast={raycast}
       >
         <cylinderGeometry
           args={[
@@ -114,7 +128,7 @@ export function PenProp({
       <mesh
         castShadow
         position={[0, PEN_TIP_LENGTH_M + PEN_BODY_LENGTH_M, 0]}
-        raycast={blockRay}
+        raycast={raycast}
       >
         <cylinderGeometry
           args={[

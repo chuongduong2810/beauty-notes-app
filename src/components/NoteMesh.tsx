@@ -2,12 +2,22 @@ import { memo, useEffect, useRef } from "react";
 import { Text } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { animated, useSpring } from "@react-spring/three";
-import { Group, Vector3 } from "three";
+import { Group, Mesh as ThreeMesh, Vector3 } from "three";
 import { paletteEntry } from "../lib/palette";
 import { noteLocalTransform } from "../lib/note-placement";
 import { createPaperTexture } from "../lib/note-paper-texture";
 import type { Note } from "../lib/room";
 import { useAppStore } from "../store";
+
+/**
+ * Three.js's default Mesh.prototype.raycast — pass this explicitly
+ * when raycast is enabled, NEVER `undefined`. Passing undefined as a
+ * JSX prop makes R3F assign `mesh.raycast = undefined` on the
+ * instance, which shadows the prototype method and crashes the next
+ * raycast with "object.raycast is not a function".
+ */
+const DEFAULT_MESH_RAYCAST = ThreeMesh.prototype.raycast;
+const NO_RAYCAST = () => null;
 
 /**
  * World position (metres) where the crumple animation lands — slightly
@@ -103,6 +113,7 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
    */
   const currentTool = useAppStore((s) => s.penState.currentTool);
   const noteIsInteractive = currentTool === "note";
+  const noteRaycast = noteIsInteractive ? DEFAULT_MESH_RAYCAST : NO_RAYCAST;
 
   const pointerState = useRef<{
     pointerId: number | null;
@@ -294,7 +305,7 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
       <mesh
         position-z={-0.0002}
         receiveShadow
-        raycast={noteIsInteractive ? undefined : () => null}
+        raycast={noteRaycast}
       >
         <planeGeometry
           args={[t.size_m[0] + 0.003, t.size_m[1] + 0.003]}
@@ -312,7 +323,7 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
         onPointerMove={noteIsInteractive ? onPointerMove : undefined}
         onPointerUp={noteIsInteractive ? onPointerUp : undefined}
         onPointerCancel={noteIsInteractive ? onPointerUp : undefined}
-        raycast={noteIsInteractive ? undefined : () => null}
+        raycast={noteRaycast}
       >
         <planeGeometry args={t.size_m} />
         <meshStandardMaterial
@@ -328,7 +339,7 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
       <mesh
         position={[0, t.size_m[1] / 2 - 0.006, 0.005]}
         castShadow
-        raycast={noteIsInteractive ? undefined : () => null}
+        raycast={noteRaycast}
       >
         <sphereGeometry args={[0.0045, 16, 12]} />
         <meshStandardMaterial
