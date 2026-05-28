@@ -14,6 +14,7 @@ import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { NoteEditor } from "./components/NoteEditor";
 import { RoomScene } from "./components/RoomScene";
 import { RoomFurniture } from "./components/RoomFurniture";
+import { SplashScreen } from "./components/SplashScreen";
 import { ToolPalette } from "./components/ToolPalette";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
@@ -250,6 +251,7 @@ export function App() {
   const drawingStroke = useAppStore(
     (s) => s.penState.inProgressStroke !== null,
   );
+  const inPenMode = useAppStore((s) => s.penState.currentTool === "pen");
   useEffect(() => {
     const c = orbitRef.current;
     if (!c) return;
@@ -315,9 +317,11 @@ export function App() {
         position: "fixed",
         inset: 0,
         background: ROOM_BACKDROP,
-        // Hide the system cursor while the user is drawing — the 3D
-        // pen mesh substitutes as the cursor on the wall (#35).
-        cursor: drawingStroke ? "none" : undefined,
+        // Hide the system cursor whenever the pen is "in hand" — i.e.
+        // the user is in Pen mode, whether actively drawing or just
+        // hovering. The 3D pen mesh substitutes as the cursor on the
+        // wall (#35).
+        cursor: inPenMode ? "none" : undefined,
       }}
     >
       <Canvas
@@ -374,6 +378,7 @@ export function App() {
       </Canvas>
       <NoteEditor />
       <ToolPalette />
+      <SplashScreen />
     </div>
   );
 }

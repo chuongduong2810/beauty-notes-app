@@ -90,6 +90,14 @@ type AppState = {
    * `lib/pen-tool.ts` can be tested in isolation.
    */
   penState: PenState;
+  /**
+   * Where on a wall the cursor is currently hitting while in Pen mode
+   * but not actively drawing — drives the 3D pen-cursor follower so
+   * the pen tracks the wall the moment the user picks it up, instead
+   * of only appearing once they pen-down (#35 follow-up). Cleared
+   * when the cursor leaves any wall or when Pen mode exits.
+   */
+  penHoverPoint: { surface_id: string; u: number; v: number } | null;
   /** Whether the floating ToolPalette chrome is shown. Hidden via the
    *  "×" pill on the toolbar; restored via the small show-affordance
    *  in its place. Defaults to true. */
@@ -129,6 +137,9 @@ type AppState = {
   ) => void;
 
   setCurrentTool: (tool: Tool) => void;
+  setPenHoverPoint: (
+    point: { surface_id: string; u: number; v: number } | null,
+  ) => void;
   setToolbarVisible: (visible: boolean) => void;
   beginStroke: (surface_id: string, point: StrokePoint) => void;
   appendStrokePoint: (point: StrokePoint) => void;
@@ -161,6 +172,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   annotations: [],
 
   penState: initialPenState,
+  penHoverPoint: null,
   toolbarVisible: true,
   penSessionAnnotations: {},
 
@@ -193,7 +205,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       penState: setCurrentToolReducer(s.penState, tool),
       penSessionAnnotations: {},
+      // Leaving Pen mode drops the hover point so a stale ghost pen
+      // doesn't render on the wall after the user switches tools.
+      penHoverPoint: tool === "pen" ? s.penHoverPoint : null,
     })),
+
+  setPenHoverPoint: (point) => set({ penHoverPoint: point }),
 
   setToolbarVisible: (visible) => set({ toolbarVisible: visible }),
 

@@ -22,29 +22,40 @@ const isWall = (kind: SurfaceKind): boolean => kind.startsWith("wall_");
  * renderer, and so the Surface's world transform handles orienting the
  * pen relative to whichever wall the user is drawing on.
  *
- * The PenProp's +Y is along the pen body — we rotate -90° around X so
- * the body extends along the Surface's +Z (outward from the wall),
- * then add a small writing-tilt away from perpendicular to read as
- * "hand-held".
+ * The PenProp's +Y is along the pen body — we rotate +90° around X so
+ * the body extends along the Surface's +Z (outward from the wall, into
+ * the room), then back off by ~20° to read as a natural writing-hand
+ * tilt rather than a perpendicular needle.
  */
 function PenCursor({
+  surfaceId,
   surfaceWidthM,
   surfaceHeightM,
 }: {
+  surfaceId: string;
   surfaceWidthM: number;
   surfaceHeightM: number;
 }) {
-  const lastPoint = useAppStore((s) => {
-    const points = s.penState.inProgressStroke?.points;
-    return points && points.length > 0 ? points[points.length - 1] : null;
+  // Prefer the in-progress stroke's last point when actively drawing;
+  // otherwise fall back to the cursor's idle hover point so the pen
+  // tracks the wall the moment Pen mode is entered.
+  const point = useAppStore((s) => {
+    const inProgress = s.penState.inProgressStroke;
+    if (inProgress?.surface_id === surfaceId) {
+      const ps = inProgress.points;
+      return ps.length > 0 ? { u: ps[ps.length - 1].u, v: ps[ps.length - 1].v } : null;
+    }
+    const hover = s.penHoverPoint;
+    if (hover?.surface_id === surfaceId) return { u: hover.u, v: hover.v };
+    return null;
   });
-  if (!lastPoint) return null;
-  const x = (lastPoint.u - 0.5) * surfaceWidthM;
-  const y = (lastPoint.v - 0.5) * surfaceHeightM;
+  if (!point) return null;
+  const x = (point.u - 0.5) * surfaceWidthM;
+  const y = (point.v - 0.5) * surfaceHeightM;
   return (
     <group
-      position={[x, y, 0.002]}
-      rotation={[-Math.PI / 2 + 0.35, 0, 0.25]}
+      position={[x, y, 0.001]}
+      rotation={[Math.PI / 2 - 0.35, 0, 0.25]}
     >
       <PenProp raycastEnabled={false} />
     </group>
@@ -124,6 +135,7 @@ export function RoomScene({
   const beginStroke = useAppStore((s) => s.beginStroke);
   const appendStrokePoint = useAppStore((s) => s.appendStrokePoint);
   const commitStroke = useAppStore((s) => s.commitStroke);
+  const setPenHoverPoint = useAppStore((s) => s.setPenHoverPoint);
 
   const surfaceMeshes = useRef<Map<string, Mesh>>(new Map());
   const trashMeshRef = useRef<Mesh | null>(null);
@@ -229,6 +241,55 @@ export function RoomScene({
     raycaster,
     appendStrokePoint,
     commitStroke,
+  ]);
+
+  // While in Pen mode but NOT actively drawing, track the cursor's
+  // wall hit so the 3D pen-cursor (PenCursor) follows the mouse from
+  // the moment the user picks up the pen, instead of only appearing
+  // once they pen-down (#35 follow-up).
+  useEffect(() => {
+    if (currentTool !== "pen") {
+      setPenHoverPoint(null);
+      return;
+    }
+    const dom = gl.domElement;
+    const onMove = (e: PointerEvent) => {
+      // The drawing effect above already drives points while a stroke
+      // is in flight — don't double-track.
+      if (inProgressSurfaceId) return;
+      const rect = dom.getBoundingClientRect();
+      const ndc = new Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, camera);
+      const meshes = [...surfaceMeshes.current.values()];
+      const hits = raycaster.intersectObjects(meshes, false);
+      const hit = hits[0];
+      if (!hit || !hit.uv) {
+        setPenHoverPoint(null);
+        return;
+      }
+      const surface_id = (hit.object.userData as { surface_id?: string })
+        .surface_id;
+      if (!surface_id) {
+        setPenHoverPoint(null);
+        return;
+      }
+      setPenHoverPoint({ surface_id, u: hit.uv.x, v: hit.uv.y });
+    };
+    dom.addEventListener("pointermove", onMove);
+    return () => {
+      dom.removeEventListener("pointermove", onMove);
+      setPenHoverPoint(null);
+    };
+  }, [
+    currentTool,
+    inProgressSurfaceId,
+    camera,
+    gl,
+    raycaster,
+    setPenHoverPoint,
   ]);
 
   // Bucket annotations by surface for cheap per-Surface rendering.
@@ -364,16 +425,22 @@ export function RoomScene({
                 Surface it began on. Committed Strokes above use the
                 same renderer; this just feeds it the live points. */}
             {inProgressSurfaceId === s.id && (
-              <>
-                <InProgressStrokePreview
-                  surfaceWidthM={t.size[0]}
-                  surfaceHeightM={t.size[1]}
-                />
-                <PenCursor
-                  surfaceWidthM={t.size[0]}
-                  surfaceHeightM={t.size[1]}
-                />
-              </>
+              <InProgressStrokePreview
+                surfaceWidthM={t.size[0]}
+                surfaceHeightM={t.size[1]}
+              />
+            )}
+            {/* PenCursor follows the cursor's wall hit any time the
+                user is in Pen mode — whether actively drawing or just
+                hovering after picking up the pen. The component
+                itself decides whether to render based on whether this
+                Surface owns the active stroke or the idle hover. */}
+            {currentTool === "pen" && (
+              <PenCursor
+                surfaceId={s.id}
+                surfaceWidthM={t.size[0]}
+                surfaceHeightM={t.size[1]}
+              />
             )}
             {surfaceNotes.map((n) => (
               <NoteMesh

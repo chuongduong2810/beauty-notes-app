@@ -108,7 +108,7 @@ export function RoomFurniture() {
             visible={penHovered}
             title="Pencil"
             subtitle="Click to start drawing"
-            position={[0, 0.05, 0]}
+            position={[0, 0.08, 0]}
           />
         </group>
       )}
