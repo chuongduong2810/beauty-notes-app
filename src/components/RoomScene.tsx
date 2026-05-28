@@ -6,12 +6,48 @@ import type { Room, Surface, Note, SurfaceKind } from "../lib/room";
 import { paletteEntry } from "../lib/palette";
 import { surfaceTransform } from "../lib/surface-geometry";
 import { NoteMesh } from "./NoteMesh";
+import { StrokeMesh } from "./StrokeMesh";
 import { useAppStore } from "../store";
 
 /** Where the trash bin sits on the floor (world coordinates, metres). */
 const TRASH_POSITION: [number, number, number] = [-1.2, 0, -2.2];
 
 const isWall = (kind: SurfaceKind): boolean => kind.startsWith("wall_");
+
+/**
+ * Live preview of the Stroke currently being drawn. Subscribes to the
+ * in-progress points directly so each appended point re-renders the
+ * polyline without waiting for the commit-to-repo roundtrip.
+ */
+function InProgressStrokePreview({
+  surfaceWidthM,
+  surfaceHeightM,
+}: {
+  surfaceWidthM: number;
+  surfaceHeightM: number;
+}) {
+  const points = useAppStore(
+    (s) => s.penState.inProgressStroke?.points ?? null,
+  );
+  const colorId = useAppStore((s) => s.penState.pen.color_id);
+  const widthId = useAppStore((s) => s.penState.pen.width_id);
+  if (!points || points.length < 2) return null;
+  return (
+    <StrokeMesh
+      stroke={{
+        id: "in-progress",
+        annotation_id: "in-progress",
+        points,
+        color_id: colorId,
+        width_id: widthId,
+        index: 0,
+        created_at: "",
+      }}
+      surfaceWidthM={surfaceWidthM}
+      surfaceHeightM={surfaceHeightM}
+    />
+  );
+}
 
 /**
  * Renders the six Surfaces that bound a Room (ADR-0008), plus every
@@ -43,9 +79,20 @@ export function RoomScene({
   const setDragOverTrash = useAppStore((s) => s.setDragOverTrash);
   const dragOverTrash = useAppStore((s) => s.dragOverTrash);
   const endNoteDrag = useAppStore((s) => s.endNoteDrag);
+  const currentTool = useAppStore((s) => s.penState.currentTool);
+  const inProgressSurfaceId = useAppStore(
+    (s) => s.penState.inProgressStroke?.surface_id ?? null,
+  );
+  const annotations = useAppStore((s) => s.annotations);
+  const beginStroke = useAppStore((s) => s.beginStroke);
+  const appendStrokePoint = useAppStore((s) => s.appendStrokePoint);
+  const commitStroke = useAppStore((s) => s.commitStroke);
 
   const surfaceMeshes = useRef<Map<string, Mesh>>(new Map());
   const trashMeshRef = useRef<Mesh | null>(null);
+  /** Wall clock at the start of the active Pen Stroke — used to compute
+   *  `t` (ms since gesture started) for each appended point. */
+  const penStrokeStart = useRef<number>(0);
   const { camera, gl } = useThree();
   const raycaster = useMemo(() => new Raycaster(), []);
 
@@ -98,6 +145,65 @@ export function RoomScene({
       window.removeEventListener("pointercancel", onUp);
     };
   }, [drag, camera, gl, raycaster, setDragPin, setDragOverTrash, endNoteDrag]);
+
+  // While a Pen Stroke is in progress, drive window-level pointermove
+  // and pointerup. Raycast against the same Surface as the stroke
+  // origin; ignore points that drift off the Surface. On release,
+  // commit the stroke via the store (which writes it to the repo).
+  useEffect(() => {
+    if (!inProgressSurfaceId) return;
+    const dom = gl.domElement;
+    const startedAt = penStrokeStart.current;
+
+    const onMove = (e: PointerEvent) => {
+      const rect = dom.getBoundingClientRect();
+      const ndc = new Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, camera);
+      const mesh = surfaceMeshes.current.get(inProgressSurfaceId);
+      if (!mesh) return;
+      const hits = raycaster.intersectObject(mesh, false);
+      const hit = hits[0];
+      if (!hit || !hit.uv) return;
+      appendStrokePoint({
+        u: hit.uv.x,
+        v: hit.uv.y,
+        p: e.pressure || 0.5,
+        t: performance.now() - startedAt,
+      });
+    };
+    const onUp = () => {
+      void commitStroke();
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [
+    inProgressSurfaceId,
+    camera,
+    gl,
+    raycaster,
+    appendStrokePoint,
+    commitStroke,
+  ]);
+
+  // Bucket annotations by surface for cheap per-Surface rendering.
+  const annotationsBySurface = useMemo(() => {
+    const m = new Map<string, typeof annotations>();
+    for (const a of annotations) {
+      const arr = m.get(a.surface_id);
+      if (arr) arr.push(a);
+      else m.set(a.surface_id, [a]);
+    }
+    return m;
+  }, [annotations]);
 
   // Bucket notes by their effective surface_id (drag overrides the
   // persisted value so the Note follows the cursor across walls).
@@ -165,6 +271,7 @@ export function RoomScene({
         const acceptsNotes = isWall(s.kind);
 
         const onDoubleClick = (e: ThreeEvent<MouseEvent>) => {
+          if (currentTool !== "note") return;
           if (!acceptsNotes) return;
           if (e.object.userData.kind !== "surface") return;
           if (!e.uv) return;
@@ -172,6 +279,23 @@ export function RoomScene({
           e.stopPropagation();
           void createNoteAt(s.id, e.uv.x, e.uv.y);
         };
+
+        const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
+          if (currentTool !== "pen") return;
+          if (!e.uv) return;
+          if (e.object.userData.kind !== "surface") return;
+          if (e.object.userData.surface_id !== s.id) return;
+          e.stopPropagation();
+          penStrokeStart.current = performance.now();
+          beginStroke(s.id, {
+            u: e.uv.x,
+            v: e.uv.y,
+            p: e.nativeEvent.pressure || 0.5,
+            t: 0,
+          });
+        };
+
+        const surfaceAnnotations = annotationsBySurface.get(s.id) ?? [];
 
         return (
           <mesh
@@ -185,9 +309,29 @@ export function RoomScene({
               else surfaceMeshes.current.delete(s.id);
             }}
             onDoubleClick={onDoubleClick}
+            onPointerDown={onPointerDown}
           >
             <planeGeometry args={t.size} />
             <meshStandardMaterial color={color} roughness={0.9} metalness={0} />
+            {surfaceAnnotations.flatMap((a) =>
+              a.strokes.map((stroke) => (
+                <StrokeMesh
+                  key={stroke.id}
+                  stroke={stroke}
+                  surfaceWidthM={t.size[0]}
+                  surfaceHeightM={t.size[1]}
+                />
+              )),
+            )}
+            {/* The in-progress Stroke renders as a live preview on the
+                Surface it began on. Committed Strokes above use the
+                same renderer; this just feeds it the live points. */}
+            {inProgressSurfaceId === s.id && (
+              <InProgressStrokePreview
+                surfaceWidthM={t.size[0]}
+                surfaceHeightM={t.size[1]}
+              />
+            )}
             {surfaceNotes.map((n) => (
               <NoteMesh
                 key={n.id}

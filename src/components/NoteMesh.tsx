@@ -95,6 +95,14 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
   const isEditing = editingNoteId === note.id;
   const crumplingNoteId = useAppStore((s) => s.crumplingNoteId);
   const isCrumpling = crumplingNoteId === note.id;
+  /**
+   * In Pen / Eraser modes Notes are pointer-pass-through (issue #35) —
+   * a pen-down lands on the Surface behind, not on the Note. We do this
+   * by skipping the raycast on the Note's interactive meshes when the
+   * tool isn't `"note"`.
+   */
+  const currentTool = useAppStore((s) => s.penState.currentTool);
+  const noteIsInteractive = currentTool === "note";
 
   const pointerState = useRef<{
     pointerId: number | null;
@@ -283,7 +291,11 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
           palette's `shadow` colour peeks out around the front face and
           silhouettes the Note against warm-white walls. Cheap: one
           extra plane per Note, no shadow caster. */}
-      <mesh position-z={-0.0002} receiveShadow>
+      <mesh
+        position-z={-0.0002}
+        receiveShadow
+        raycast={noteIsInteractive ? undefined : () => null}
+      >
         <planeGeometry
           args={[t.size_m[0] + 0.003, t.size_m[1] + 0.003]}
         />
@@ -296,10 +308,11 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
       <mesh
         castShadow
         receiveShadow
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerDown={noteIsInteractive ? onPointerDown : undefined}
+        onPointerMove={noteIsInteractive ? onPointerMove : undefined}
+        onPointerUp={noteIsInteractive ? onPointerUp : undefined}
+        onPointerCancel={noteIsInteractive ? onPointerUp : undefined}
+        raycast={noteIsInteractive ? undefined : () => null}
       >
         <planeGeometry args={t.size_m} />
         <meshStandardMaterial
@@ -315,6 +328,7 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
       <mesh
         position={[0, t.size_m[1] / 2 - 0.006, 0.005]}
         castShadow
+        raycast={noteIsInteractive ? undefined : () => null}
       >
         <sphereGeometry args={[0.0045, 16, 12]} />
         <meshStandardMaterial

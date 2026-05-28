@@ -14,6 +14,7 @@ import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { NoteEditor } from "./components/NoteEditor";
 import { RoomScene } from "./components/RoomScene";
 import { RoomFurniture } from "./components/RoomFurniture";
+import { ToolPalette } from "./components/ToolPalette";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
@@ -208,11 +209,11 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     bootstrapSessionAndRoom()
-      .then(({ session, room, surfaces, notes }) => {
+      .then(({ session, room, surfaces, notes, annotations }) => {
         if (cancelled) return;
         setSession(session);
         setRepo(supabaseCanvasRepository(supabase));
-        setRoom(room, surfaces, notes);
+        setRoom(room, surfaces, notes, annotations);
       })
       .catch((err) => console.error("Bootstrap failed:", err));
     return () => {
@@ -348,6 +349,7 @@ export function App() {
         <Atmosphere />
       </Canvas>
       <NoteEditor />
+      <ToolPalette />
     </div>
   );
 }
