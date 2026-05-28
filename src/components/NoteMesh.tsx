@@ -238,6 +238,20 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
           metalness={0}
         />
       </mesh>
+      {/* Red push-pin at the top centre — the visual signature of a
+          Note Pinned to a wall. Slight metalness + low roughness so
+          the directional key light makes the head catch a highlight. */}
+      <mesh
+        position={[0, t.size_m[1] / 2 - 0.006, 0.005]}
+        castShadow
+      >
+        <sphereGeometry args={[0.0045, 16, 12]} />
+        <meshStandardMaterial
+          color="#d62828"
+          roughness={0.25}
+          metalness={0.35}
+        />
+      </mesh>
       {!isEditing && (
         <Text
           position={[

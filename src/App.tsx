@@ -25,7 +25,7 @@ const ROOM_BACKDROP = "#0e0b16";
 
 const ORBIT_TARGET: [number, number, number] = [0, 1.5, 0];
 const ORBIT_MIN_DISTANCE = 0.4;
-const ORBIT_MAX_DISTANCE = 2.7;
+const ORBIT_MAX_DISTANCE = 20;
 const ORBIT_MIN_POLAR_ANGLE = 0.17;
 const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17;
 
