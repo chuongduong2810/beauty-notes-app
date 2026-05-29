@@ -16,10 +16,12 @@ import { RoomScene } from "./components/RoomScene";
 import { RoomFurniture } from "./components/RoomFurniture";
 import { SplashScreen } from "./components/SplashScreen";
 import { OrbitRadiusKeeper } from "./components/OrbitRadiusKeeper";
+import { RoomPicker } from "./components/RoomPicker";
 import { ToolPalette } from "./components/ToolPalette";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
+import { parseRoomIdFromPath, roomPath } from "./lib/room-route";
 import { shadowFollowPose } from "./lib/shadow-follow";
 import { supabase } from "./lib/supabase";
 import { supabaseCanvasRepository } from "./lib/supabase-canvas-repository";
@@ -227,20 +229,45 @@ export function App() {
     c.update();
   }, []);
 
+  const setRooms = useAppStore((s) => s.setRooms);
+  const switchRoom = useAppStore((s) => s.switchRoom);
+
   useEffect(() => {
     let cancelled = false;
-    bootstrapSessionAndRoom()
-      .then(({ session, room, surfaces, notes, annotations }) => {
+    // Prefer the Room id encoded in the URL — supports bookmarkable
+    // /room/:id (issue #22). Falls back to the most-recent Room
+    // inside ensureInitialRoom when the URL doesn't match.
+    const preferred = parseRoomIdFromPath(window.location.pathname) ?? undefined;
+    bootstrapSessionAndRoom(preferred)
+      .then(({ session, room, rooms, surfaces, notes, annotations }) => {
         if (cancelled) return;
         setSession(session);
         setRepo(supabaseCanvasRepository(supabase));
+        setRooms(rooms);
         setRoom(room, surfaces, notes, annotations);
+        // Normalise the URL: if we landed at /, push the resolved
+        // Room id so reloads + bookmarks both go straight to this Room.
+        if (window.location.pathname !== roomPath(room.id)) {
+          window.history.replaceState(null, "", roomPath(room.id));
+        }
       })
       .catch((err) => console.error("Bootstrap failed:", err));
     return () => {
       cancelled = true;
     };
-  }, [setSession, setRepo, setRoom]);
+  }, [setSession, setRepo, setRoom, setRooms]);
+
+  // Back / forward navigation: pull the Room id from the new URL and
+  // hand off to switchRoom. switchRoom no-ops if the id matches the
+  // current Room, so this is safe for any popstate.
+  useEffect(() => {
+    const onPop = () => {
+      const id = parseRoomIdFromPath(window.location.pathname);
+      if (id) void switchRoom(id);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [switchRoom]);
 
   // Restore the persisted orbit pose ONCE per Room load. Previously
   // this effect also depended on focusedNoteId + the camera_* fields,
@@ -419,6 +446,7 @@ export function App() {
         <Atmosphere />
       </Canvas>
       <NoteEditor />
+      <RoomPicker />
       <ToolPalette />
       <SplashScreen />
     </div>

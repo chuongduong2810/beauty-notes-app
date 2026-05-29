@@ -17,7 +17,8 @@ const TOOLS: Array<{ id: Tool; label: string; glyph: string }> = [
 const containerStyle: CSSProperties = {
   position: "fixed",
   top: 16,
-  left: 16,
+  left: "50%",
+  transform: "translateX(-50%)",
   display: "flex",
   gap: 6,
   padding: 6,
@@ -58,7 +59,8 @@ const hidePillStyle: CSSProperties = {
 const restoreChipStyle: CSSProperties = {
   position: "fixed",
   top: 16,
-  left: 16,
+  left: "50%",
+  transform: "translateX(-50%)",
   width: 32,
   height: 32,
   borderRadius: 999,

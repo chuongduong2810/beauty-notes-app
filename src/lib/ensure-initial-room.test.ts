@@ -5,17 +5,45 @@ import { ensureInitialRoom } from "./ensure-initial-room";
 describe("ensureInitialRoom — idempotent first-run Room bootstrap (issue #13)", () => {
   it("creates a Room with six seeded Surfaces, no Notes, and no Annotations when the user has none", async () => {
     const repo = new InMemoryCanvasRepository();
-    const { room, surfaces, notes, annotations } = await ensureInitialRoom(
+    const { room, rooms, surfaces, notes, annotations } = await ensureInitialRoom(
       repo,
       "user-1",
     );
 
     expect(room.owner_id).toBe("user-1");
     expect(room.name).toBe("Untitled");
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0].id).toBe(room.id);
     expect(surfaces).toHaveLength(6);
     expect(notes).toEqual([]);
     expect(annotations).toEqual([]);
     expect(repo.insertRoomCalls).toBe(1);
+  });
+
+  it("loads the preferredRoomId when the user owns it (issue #22 — bookmarkable /room/:id)", async () => {
+    const repo = new InMemoryCanvasRepository();
+    const first = await repo.insertRoom("user-1", "First");
+    await new Promise((r) => setTimeout(r, 5));
+    const second = await repo.insertRoom("user-1", "Second");
+
+    // Without preferredRoomId, most-recent wins.
+    const noPref = await ensureInitialRoom(repo, "user-1");
+    expect(noPref.room.id).toBe(second.id);
+
+    // With preferredRoomId, the requested Room wins.
+    const withPref = await ensureInitialRoom(repo, "user-1", first.id);
+    expect(withPref.room.id).toBe(first.id);
+    expect(withPref.rooms.map((r) => r.id)).toContain(first.id);
+    expect(withPref.rooms.map((r) => r.id)).toContain(second.id);
+  });
+
+  it("falls back to the most-recent Room when preferredRoomId doesn't match anything the user owns", async () => {
+    const repo = new InMemoryCanvasRepository();
+    const owned = await repo.insertRoom("user-1", "Owned");
+
+    const result = await ensureInitialRoom(repo, "user-1", "no-such-room");
+    expect(result.room.id).toBe(owned.id);
+    expect(repo.insertRoomCalls).toBe(1); // no new Room created
   });
 
   it("returns the existing most-recent Room with its Surfaces, Notes, and Annotations — does not create another", async () => {
@@ -49,6 +77,7 @@ describe("ensureInitialRoom — idempotent first-run Room bootstrap (issue #13)"
     const result = await ensureInitialRoom(repo, "user-1");
 
     expect(result.room.id).toBe(first.id);
+    expect(result.rooms.map((r) => r.id)).toEqual([first.id]);
     expect(result.surfaces).toHaveLength(6);
     expect(result.notes.map((n) => n.id)).toEqual([seeded.id]);
     expect(result.annotations.map((a) => a.id)).toEqual([ann.id]);

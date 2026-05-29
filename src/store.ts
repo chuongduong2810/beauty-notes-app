@@ -12,7 +12,9 @@ import {
   type PenState,
   type Tool,
 } from "./lib/pen-tool";
+import { loadRoom } from "./lib/load-room";
 import type { ScreenRect } from "./lib/project-note-rect";
+import { roomPath } from "./lib/room-route";
 import {
   DEFAULT_NOTE_HEIGHT_CM,
   DEFAULT_NOTE_WIDTH_CM,
@@ -35,6 +37,19 @@ const NOTE_BODY_DEBOUNCE_MS = 500;
  * NoteMesh's crumple useEffect. Slightly longer to be safe.
  */
 const CRUMPLE_DURATION_MS = 900;
+
+/**
+ * Push `/room/<id>` to the browser history when the active Room
+ * changes inside a store action (issue #22). Guarded for SSR /
+ * non-DOM environments and no-ops when the URL already matches so
+ * back/forward popstate doesn't loop back into our own push.
+ */
+function pushRoomUrl(roomId: string): void {
+  if (typeof window === "undefined") return;
+  const target = roomPath(roomId);
+  if (window.location.pathname === target) return;
+  window.history.pushState(null, "", target);
+}
 
 // Module-scope debounced saver for Note bodies (ADR-0005). One channel
 // shared across all editing sessions; latest body wins.
@@ -80,6 +95,12 @@ type AppState = {
   ready: boolean;
 
   currentRoom: Room | null;
+  /**
+   * All Rooms owned by the current User, most-recently-updated first.
+   * Drives the RoomPicker dropdown (issue #22). Refreshed when the
+   * user switches Rooms or creates one.
+   */
+  rooms: Room[];
   surfaces: Surface[];
   notes: Note[];
   annotations: Annotation[];
@@ -135,6 +156,15 @@ type AppState = {
     notes: Note[],
     annotations: Annotation[],
   ) => void;
+  setRooms: (rooms: Room[]) => void;
+  /** Switch to a different Room owned by the current User. No-op if
+   *  already on the requested Room or the Room doesn't exist. Clears
+   *  focus / editing state — per #22 spec we don't auto-resume Focus
+   *  on reopen. */
+  switchRoom: (roomId: string) => Promise<void>;
+  /** Create a new Room owned by the current User, refresh the rooms
+   *  list, and switch to it. */
+  createRoom: (name?: string) => Promise<Room | null>;
 
   setCurrentTool: (tool: Tool) => void;
   setPenHoverPoint: (
@@ -167,6 +197,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   ready: false,
 
   currentRoom: null,
+  rooms: [],
   surfaces: [],
   notes: [],
   annotations: [],
@@ -196,10 +227,46 @@ export const useAppStore = create<AppState>((set, get) => ({
       ready: true,
       // Entering a Room resets the Pen-tool state to "Note" mode (per
       // ADR-0014 — mode-based input is global per session but resets
-      // on Room open).
+      // on Room open). Focus + editing reset too — per #22 spec a
+      // reopened Room doesn't auto-resume the prior Focus session.
       penState: initialPenState,
       penSessionAnnotations: {},
+      focusedNoteId: null,
+      beforeFocus: null,
+      editingNoteId: null,
+      editingRect: null,
     }),
+
+  setRooms: (rooms) => set({ rooms }),
+
+  switchRoom: async (roomId) => {
+    const { repo, currentRoom } = get();
+    if (!repo) return;
+    if (currentRoom?.id === roomId) return;
+    const bundle = await loadRoom(repo, roomId);
+    if (!bundle) return;
+    get().setRoom(
+      bundle.room,
+      bundle.surfaces,
+      bundle.notes,
+      bundle.annotations,
+    );
+    pushRoomUrl(bundle.room.id);
+  },
+
+  createRoom: async (name = "Untitled") => {
+    const { repo, session } = get();
+    if (!repo || !session) return null;
+    const room = await repo.insertRoom(session.user.id, name);
+    const surfaces = await repo.listSurfaces(room.id);
+    // Refresh the rooms list so the picker dropdown shows the new
+    // Room straight away.
+    const rooms = await repo.listRooms(session.user.id);
+    set({ rooms });
+    get().setRoom(room, surfaces, [], []);
+    pushRoomUrl(room.id);
+    return room;
+  },
 
   setCurrentTool: (tool) =>
     set((s) => ({
