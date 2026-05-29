@@ -52,3 +52,15 @@ _Avoid_: Line, path, segment
 **Photo Mode**:
 A camera-and-render-tuning mode for cinematic captures: DOM overlays hidden, postprocessing dialled up (heavier bloom, deeper DOF, subtle vignette, warm tint), FOV tightened, and the current frame exported as a high-resolution PNG or JPEG. Entered explicitly from a chrome control; exited explicitly. Distinct from the browser-native screenshot — the term is reserved for our in-app cinematic capture.
 _Avoid_: Screenshot, capture, photo, snapshot
+
+**Window**:
+Fixed architectural set-dressing on a wall Surface through which the City and Weather are visible. Like the desk and lamp, it is decoration rendered in front of a Surface — *not* itself a Surface, not a seventh member of the six, and not persisted data. The wall Surface beneath stays whole, so Notes and Annotations may still be Pinned over the glass. (See ADR-0015.)
+_Avoid_: Opening, glass, viewport, portal
+
+**City**:
+The skyline backdrop seen through a Window. It lives *outside* the Room's boundary and is never part of it — the Room stays bounded (ADR-0008) and the City is what lies beyond. Rendered as primitive building geometry with distance fog for depth, not as content the User can edit. (See ADR-0015.)
+_Avoid_: World, environment, skybox, background, scene
+
+**Weather**:
+The ambient, always-rainy mood of the City: falling rain outside the Window, rain streaks on the glass, and overcast light spilling into the Room. Weather is a fixed atmosphere, not user-configurable state and not persisted — there is one mood (calm rain), no forecast, no time-of-day.
+_Avoid_: Climate, forecast, conditions
