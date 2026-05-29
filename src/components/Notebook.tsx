@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSpring, animated } from "@react-spring/three";
-import { Html } from "@react-three/drei";
+import { Html, Text } from "@react-three/drei";
 import { createPaperTexture } from "../lib/note-paper-texture";
 import { notebookCoverRotation } from "../lib/notebook-pose";
 import {
@@ -53,6 +53,11 @@ const PAPER_TEXTURE = createPaperTexture();
 const COVER_COLOR = "#7a4a2b"; // warm leather-brown cover
 const SPINE_COLOR = "#653b22"; // slightly darker spine
 const PAGE_COLOR = "#f4ecd8"; // cream paper edges
+const GOLD = "#d9b56b"; // foil-stamped cover lettering + rules
+
+// Self-hosted Lora WOFF (same warm serif the Notes use) for the
+// foil-stamped cover title.
+const COVER_FONT_URL = "/fonts/Lora-Regular.woff";
 
 // Book footprint (metres) — about a 21 × 28 cm hardback lying flat.
 const BOOK_WIDTH = 0.22; // along world +X (the open spread spans 2×)
@@ -60,8 +65,11 @@ const BOOK_DEPTH = 0.28; // along world +Z (front-to-back of the desk)
 const COVER_THICKNESS = 0.012;
 const PAGE_STACK_HEIGHT = 0.03;
 
-// World pose of the closed book on the desk (see file docstring).
-const BOOK_POSITION: [number, number, number] = [-0.45, 0.79, -2.15];
+// World pose of the (open) book on the desk (see file docstring). The
+// open spread is centred on this point; the closed book sits a half-
+// width to the right of it (the spine stays put as the book opens, like
+// a real book), still well clear of the pen prop at x≈0.55.
+const BOOK_POSITION: [number, number, number] = [-0.5, 0.79, -2.15];
 
 /**
  * drei `<Html transform>` perspective-scale for the page content. Sized
@@ -302,10 +310,13 @@ export function Notebook({
     onSelectNote(noteId);
   };
 
-  // Spine hinge sits along the book's back-left edge (world -X side of
-  // the spread) so the front cover swings open to the left, revealing
-  // the right page where it rested and the left page underneath.
-  const hingeX = -BOOK_WIDTH / 2;
+  // The spine sits at the book's centre (x=0) — like a real open book,
+  // the binding is in the middle. The book body (back cover + page
+  // stack + closed front cover) lives in the RIGHT half (centred at
+  // +HALF); opening swings the front cover about the centre spine into
+  // the LEFT half (centred at -HALF), so the two pages at ±HALF end up
+  // symmetric about the spine and centred on the book.
+  const HALF = BOOK_WIDTH / 2;
   const coverTopY = PAGE_STACK_HEIGHT / 2 + COVER_THICKNESS / 2;
 
   return (
@@ -342,17 +353,19 @@ export function Notebook({
           onPointerOut={onOut}
           onPointerDown={onClickBook}
         >
-          {/* Back cover — lies flat under everything. */}
-          <mesh castShadow receiveShadow position={[0, COVER_THICKNESS / 2, 0]}>
+          {/* Back cover — the right half of the open book; under the
+              right page. */}
+          <mesh castShadow receiveShadow position={[HALF, COVER_THICKNESS / 2, 0]}>
             <boxGeometry args={[BOOK_WIDTH, COVER_THICKNESS, BOOK_DEPTH]} />
             <meshStandardMaterial color={COVER_COLOR} roughness={0.7} metalness={0.05} />
           </mesh>
 
-          {/* Page stack — cream block of sheets between the covers. */}
+          {/* Page stack — cream block of sheets sitting on the back
+              cover (right half). */}
           <mesh
             castShadow
             receiveShadow
-            position={[0, COVER_THICKNESS + PAGE_STACK_HEIGHT / 2, 0]}
+            position={[HALF, COVER_THICKNESS + PAGE_STACK_HEIGHT / 2, 0]}
           >
             <boxGeometry
               args={[BOOK_WIDTH * 0.96, PAGE_STACK_HEIGHT, BOOK_DEPTH * 0.96]}
@@ -365,12 +378,12 @@ export function Notebook({
             />
           </mesh>
 
-          {/* Spine — runs along the back-left hinge edge, tying the two
-              covers together. */}
+          {/* Spine — the central binding (x=0) the front cover hinges
+              about. */}
           <mesh
             castShadow
             receiveShadow
-            position={[hingeX, COVER_THICKNESS + PAGE_STACK_HEIGHT / 2, 0]}
+            position={[0, COVER_THICKNESS + PAGE_STACK_HEIGHT / 2, 0]}
           >
             <boxGeometry
               args={[COVER_THICKNESS, PAGE_STACK_HEIGHT + COVER_THICKNESS * 2, BOOK_DEPTH]}
@@ -378,23 +391,63 @@ export function Notebook({
             <meshStandardMaterial color={SPINE_COLOR} roughness={0.7} metalness={0.05} />
           </mesh>
 
-          {/* Front cover — hinged at the spine. Closed it lies flat on
-              the page stack; react-spring rotates it about the spine
-              (world +Z axis) to swing it open. Modelled as a child of a
-              group pivoted at the hinge so the rotation is about the
-              spine edge, not the cover's centre. */}
+          {/* Front cover — hinged at the centre spine (x=0). Closed it
+              lies on the page stack (right half); react-spring rotates it
+              a full 180° about the spine into the left half, where it
+              backs the left page. Pivoted at the spine so the swing is
+              about the binding, not the cover's centre. */}
           <animated.group
-            position={[hingeX, COVER_THICKNESS + PAGE_STACK_HEIGHT, 0]}
+            position={[0, COVER_THICKNESS + PAGE_STACK_HEIGHT, 0]}
             rotation-z={coverAngle}
           >
             <mesh
               castShadow
               receiveShadow
-              position={[BOOK_WIDTH / 2, coverTopY, 0]}
+              position={[HALF, coverTopY, 0]}
             >
               <boxGeometry args={[BOOK_WIDTH, COVER_THICKNESS, BOOK_DEPTH]} />
               <meshStandardMaterial color={COVER_COLOR} roughness={0.7} metalness={0.05} />
             </mesh>
+
+            {/* Foil-stamped title on the cover face. Sits a hair above
+                the cover's top surface; rotated flat so it reads when the
+                book is closed. Flips under with the cover when opened. */}
+            <group
+              position={[HALF, coverTopY + COVER_THICKNESS / 2 + 0.0012, 0]}
+              rotation={[-Math.PI / 2, 0, 0]}
+            >
+              {/* Decorative gold rules above + below the title. */}
+              <mesh position={[0, 0.052, 0]}>
+                <planeGeometry args={[0.14, 0.0025]} />
+                <meshStandardMaterial color={GOLD} roughness={0.4} metalness={0.5} />
+              </mesh>
+              <mesh position={[0, -0.012, 0]}>
+                <planeGeometry args={[0.14, 0.0025]} />
+                <meshStandardMaterial color={GOLD} roughness={0.4} metalness={0.5} />
+              </mesh>
+              <Text
+                font={COVER_FONT_URL}
+                position={[0, 0.022, 0.0005]}
+                fontSize={0.024}
+                letterSpacing={0.12}
+                color={GOLD}
+                anchorX="center"
+                anchorY="middle"
+              >
+                NOTEBOOK
+              </Text>
+              <Text
+                font={COVER_FONT_URL}
+                position={[0, -0.05, 0.0005]}
+                fontSize={0.0095}
+                letterSpacing={0.18}
+                color={GOLD}
+                anchorX="center"
+                anchorY="middle"
+              >
+                · thoughts &amp; notes ·
+              </Text>
+            </group>
           </animated.group>
         </group>
 
