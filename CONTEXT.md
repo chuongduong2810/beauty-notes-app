@@ -1,4 +1,4 @@
-# Beauty Notes
+# Spatial Creative Workspace
 
 A spatial sticky-notes application. The workspace is an immersive **Room**: the user stands inside a bounded 3D environment and Pins **Notes** to its **Surfaces**. Mouse drag orbits the camera around eye level; the wheel zooms; a single click on a Note dollies in to focus and edit.
 
