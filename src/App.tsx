@@ -14,6 +14,7 @@ import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { NoteEditor } from "./components/NoteEditor";
 import { RoomScene } from "./components/RoomScene";
 import { RoomFurniture } from "./components/RoomFurniture";
+import { CityView } from "./components/CityView";
 import { SplashScreen } from "./components/SplashScreen";
 import { OrbitRadiusKeeper } from "./components/OrbitRadiusKeeper";
 import { RoomPicker } from "./components/RoomPicker";
@@ -448,6 +449,10 @@ export function App() {
         {/* Lamp, desk, plant — small set of primitive-only props so
             the Room reads as a lived-in space. */}
         <RoomFurniture />
+        {/* Window on wall_west looking onto a foggy City skyline (#42).
+            Set-dressing in front of the wall + a procedural skyline beyond
+            the Room boundary; primitive geometry only. */}
+        <CityView />
         {/* MUST be the last Canvas child — EffectComposer wraps the scene
             it renders. multisampling=0 inside Atmosphere is what keeps
             R3F's pointer raycasting working (the previous attempt to
