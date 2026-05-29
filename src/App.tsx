@@ -1,6 +1,7 @@
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { flyPose } from "./lib/fly-path";
 import {
   ACESFilmicToneMapping,
   type DirectionalLight,
@@ -43,8 +44,10 @@ const ORBIT_MIN_POLAR_ANGLE = 0.17;
 const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17;
 
 const CAMERA_SAVE_DEBOUNCE_MS = 1000;
-/** Per-frame interpolation factor for focus-dolly easing. */
-const FOCUS_LERP = 0.12;
+/** Per-frame increment of the eased fly progress (0→1). At ~60fps this
+ *  is roughly a 0.4s transition; the smoothstep ease in `flyPose`
+ *  shapes the velocity within it. */
+const FOCUS_PROGRESS_STEP = 0.04;
 /** Threshold under which we consider the focus animation "settled". */
 const FOCUS_SETTLED_EPS = 0.002;
 
@@ -52,12 +55,20 @@ type CameraPose = { yaw: number; pitch: number; distance: number };
 
 /**
  * Per-frame helper inside <Canvas> that drives the focus transition
- * (issue #17). When `focusedNoteId` is set, this component:
+ * (issue #17, arc'd in #67). When `focusedNoteId` is set, this component:
  *  - disables OrbitControls so the user's drags don't fight the dolly
- *  - lerps the Camera position + the OrbitControls target toward the
- *    focus pose
- *  - on un-focus, lerps both back to the snapshot stored in
- *    `beforeFocus` and re-enables OrbitControls when settled
+ *  - flies the Camera + the OrbitControls target toward the focus pose
+ *    along an eased orbit ARC (`flyPose`) rather than a straight lerp,
+ *    so a Note on a wall behind the user stays oriented instead of the
+ *    camera cutting through the room centre (ADR-0017)
+ *  - on un-focus, flies both back to the snapshot stored in
+ *    `beforeFocus` along the same arc and re-enables OrbitControls when
+ *    settled
+ *
+ * The arc is driven by a per-transition `progress` ref (0→1) advanced a
+ * fixed amount each frame and eased inside `flyPose`. We snapshot the
+ * pose at the start of each leg (`legStart`) so the arc interpolates
+ * from a stable origin rather than chasing a moving camera.
  */
 /**
  * The orbit-following sky/key light, with its shadow camera frustum
@@ -143,20 +154,36 @@ function FocusDriver({
   const notes = useAppStore((s) => s.notes);
   const { camera } = useThree();
 
+  // Eased fly progress for the current transition leg (0→1), and the
+  // pose we started that leg from. Refs (not state) so advancing them
+  // each frame never triggers a React re-render.
+  const progress = useRef(0);
+  const legStart = useRef<{
+    target: [number, number, number];
+    position: [number, number, number];
+  } | null>(null);
+
   // Disable orbit interaction the moment we enter focus mode; re-enable
-  // when the un-focus animation has settled.
+  // when the un-focus animation has settled. A new focus target (or the
+  // start of an un-focus) begins a fresh transition leg, so reset
+  // progress and snapshot the camera's current pose as the arc origin.
   useEffect(() => {
     const c = orbitRef.current;
     if (!c) return;
     if (focusedNoteId) c.enabled = false;
-  }, [focusedNoteId, orbitRef]);
+    progress.current = 0;
+    legStart.current = {
+      target: [c.target.x, c.target.y, c.target.z],
+      position: [camera.position.x, camera.position.y, camera.position.z],
+    };
+  }, [focusedNoteId, orbitRef, camera]);
 
   useFrame(() => {
     const c = orbitRef.current;
     if (!c || !room) return;
 
-    // Target pose: either the focus pose for the focused Note, or the
-    // user's pre-focus snapshot (if we just un-focused), or nothing.
+    // Destination pose: either the focus pose for the focused Note, or
+    // the user's pre-focus snapshot (if we just un-focused), or nothing.
     let targetTarget: [number, number, number] | null = null;
     let targetPos: [number, number, number] | null = null;
 
@@ -178,15 +205,42 @@ function FocusDriver({
 
     if (!targetTarget || !targetPos) return;
 
+    // Origin of this arc — snapshot taken when the leg began (falls back
+    // to the live pose for the very first frame).
+    const origin =
+      legStart.current ??
+      {
+        target: [c.target.x, c.target.y, c.target.z] as [
+          number,
+          number,
+          number,
+        ],
+        position: [
+          camera.position.x,
+          camera.position.y,
+          camera.position.z,
+        ] as [number, number, number],
+      };
+
+    // Advance the eased fly progress and sample the arc.
+    progress.current = Math.min(1, progress.current + FOCUS_PROGRESS_STEP);
+    const pose = flyPose({
+      camPos: origin.position,
+      target: origin.target,
+      focusCamPos: targetPos,
+      focusTarget: targetTarget,
+      t: progress.current,
+    });
+
+    c.target.set(pose.target[0], pose.target[1], pose.target[2]);
+    camera.position.set(pose.camPos[0], pose.camPos[1], pose.camPos[2]);
+
     const t = new Vector3(...targetTarget);
     const p = new Vector3(...targetPos);
-
-    c.target.lerp(t, FOCUS_LERP);
-    camera.position.lerp(p, FOCUS_LERP);
-
     const settled =
-      c.target.distanceTo(t) < FOCUS_SETTLED_EPS &&
-      camera.position.distanceTo(p) < FOCUS_SETTLED_EPS;
+      progress.current >= 1 ||
+      (c.target.distanceTo(t) < FOCUS_SETTLED_EPS &&
+        camera.position.distanceTo(p) < FOCUS_SETTLED_EPS);
 
     // When the un-focus animation has settled, re-enable orbit so the
     // user can rotate / zoom again. Also clear the snapshot.
