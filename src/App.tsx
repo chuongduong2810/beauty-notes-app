@@ -414,17 +414,14 @@ export function App() {
   // dragging a Note across Surfaces, a stray drag-orbit would fight the
   // re-Pin gesture and spin the camera. Lock orbit until the drag commits.
   const draggingNote = useAppStore((s) => s.drag !== null);
-  // Lock orbit while a Notebook page is being drag-turned (same rationale
-  // as a Note drag — a stray drag-orbit would fight the page-turn gesture).
-  const notebookDragging = useAppStore((s) => s.notebookDragging);
   const inPenMode = useAppStore((s) => s.penState.currentTool === "pen");
   const beforeFocus = useAppStore((s) => s.beforeFocus);
   useEffect(() => {
     const c = orbitRef.current;
     if (!c) return;
     if (focusedNoteId || beforeFocus) return;
-    c.enabled = !drawingStroke && !draggingNote && !notebookDragging;
-  }, [drawingStroke, draggingNote, notebookDragging, focusedNoteId, beforeFocus]);
+    c.enabled = !drawingStroke && !draggingNote;
+  }, [drawingStroke, draggingNote, focusedNoteId, beforeFocus]);
 
   // Escape exits focus.
   useEffect(() => {

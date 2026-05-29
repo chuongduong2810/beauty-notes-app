@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSpring, animated } from "@react-spring/three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Html, Text } from "@react-three/drei";
@@ -165,7 +159,6 @@ function NotebookSpread({
 
   const session = useAppStore((s) => s.session);
   const currentRoom = useAppStore((s) => s.currentRoom);
-  const setNotebookDragging = useAppStore((s) => s.setNotebookDragging);
   const claimStatus = useOwnershipStore((s) => s.claimStatus);
   const claimError = useOwnershipStore((s) => s.claimError);
   const claimRoom = useOwnershipStore((s) => s.claimRoom);
@@ -218,67 +211,6 @@ function NotebookSpread({
     else setView("ledger");
   };
 
-  // Drag-to-turn (no arrow buttons — matches the tactile book vibe). A
-  // horizontal drag past the threshold flips the page (drag left → next,
-  // drag right → previous); a small movement falls through as a click on
-  // whatever's underneath (guarded by `didDragRef`). The grabbed page
-  // follows the drag a little for feedback, then the new page animates in.
-  const DRAG_TURN_PX = 32;
-  const dragRef = useRef({ startX: 0, startY: 0, pointerId: -1, dragging: false });
-  const didDragRef = useRef(false);
-  const [dragX, setDragX] = useState(0);
-  const onPageDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      pointerId: e.pointerId,
-      dragging: false,
-    };
-    didDragRef.current = false;
-  };
-  const onPageMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current;
-    if (d.pointerId !== e.pointerId) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    if (!d.dragging && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
-      d.dragging = true;
-      didDragRef.current = true;
-      e.currentTarget.setPointerCapture?.(e.pointerId);
-      setNotebookDragging(true); // lock the orbit camera for the turn
-    }
-    if (d.dragging) setDragX(dx);
-  };
-  const onPageUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current;
-    if (d.pointerId !== e.pointerId) return;
-    const dx = e.clientX - d.startX;
-    const wasDragging = d.dragging;
-    d.pointerId = -1;
-    d.dragging = false;
-    setDragX(0);
-    if (wasDragging) setNotebookDragging(false);
-    if (wasDragging && Math.abs(dx) > DRAG_TURN_PX) commitTurn(dx < 0 ? 1 : -1);
-  };
-  // Safety: if the book closes mid-drag (this spread unmounts), make sure
-  // the orbit camera isn't left locked.
-  useEffect(() => () => setNotebookDragging(false), [setNotebookDragging]);
-
-  const clamp = (x: number, lo: number, hi: number) =>
-    Math.max(lo, Math.min(hi, x));
-  const pageStyle = dragX
-    ? {
-        transform: `perspective(900px) translateX(${clamp(dragX * 0.35, -30, 30)}px) rotateY(${clamp(dragX * 0.05, -12, 12)}deg)`,
-        animation: "none" as const,
-      }
-    : undefined;
-  const pageHandlers = {
-    onPointerDown: onPageDown,
-    onPointerMove: onPageMove,
-    onPointerUp: onPageUp,
-    onPointerCancel: onPageUp,
-  };
-
   const submitClaim = () => {
     if (!emailValid || claimStatus === "sending") return;
     void claimRoom(email.trim());
@@ -311,10 +243,8 @@ function NotebookSpread({
               className={
                 "notebook-tab" + (key === view ? " notebook-tab--active" : "")
               }
-              onClick={() => {
-                if (didDragRef.current) return;
-                setView(key);
-              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setView(key)}
             >
               <span className="nb-tab__icon" aria-hidden="true">
                 {SECTION_ICON[key]}
@@ -329,10 +259,8 @@ function NotebookSpread({
             className={
               "notebook-tab" + (view === "ledger" ? " notebook-tab--active" : "")
             }
-            onClick={() => {
-              if (didDragRef.current) return;
-              setView("ledger");
-            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setView("ledger")}
           >
             <span className="nb-tab__icon" aria-hidden="true">📋</span>
             <span className="nb-tab__label">Room Ledger</span>
@@ -343,10 +271,8 @@ function NotebookSpread({
               "notebook-tab notebook-tab--deed" +
               (claimed ? "" : " notebook-tab--locked")
             }
-            onClick={() => {
-              if (didDragRef.current) return;
-              if (claimed) setView("certificate");
-            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => claimed && setView("certificate")}
           >
             <span className="nb-tab__icon" aria-hidden="true">
               {claimed ? "🏅" : "🔒"}
@@ -396,10 +322,8 @@ function NotebookSpread({
                     key={n.id}
                     type="button"
                     className="nb-ledger__row"
-                    onClick={() => {
-                      if (didDragRef.current) return;
-                      onSelectNote(n.id);
-                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => onSelectNote(n.id)}
                   >
                     <span className="nb-ledger__check" aria-hidden="true">☐</span>
                     <span className="nb-ledger__rowtext">{noteSnippet(n.body)}</span>
@@ -452,10 +376,8 @@ function NotebookSpread({
                     key={n.id}
                     type="button"
                     className="notebook-entry"
-                    onClick={() => {
-                      if (didDragRef.current) return;
-                      onSelectNote(n.id);
-                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => onSelectNote(n.id)}
                   >
                     <span
                       className="notebook-entry__swatch"
@@ -618,10 +540,19 @@ function NotebookSpread({
         <div
           key={turnKey}
           className="notebook-page notebook-page--left np-turn np-turn--l"
-          style={pageStyle}
-          {...pageHandlers}
         >
           {leftBody}
+          {/* Folded-corner "previous page" — turns back (browse cycles;
+              the ownership spreads turn back to the ledger). */}
+          <button
+            type="button"
+            className="nb-corner nb-corner--prev"
+            aria-label="Previous page"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => commitTurn(-1)}
+          >
+            <span className="nb-corner__chev" aria-hidden="true">‹</span>
+          </button>
         </div>
       </Html>
 
@@ -637,8 +568,6 @@ function NotebookSpread({
         <div
           key={turnKey}
           className="notebook-page notebook-page--right np-turn np-turn--r"
-          style={pageStyle}
-          {...pageHandlers}
         >
           {rightBody}
           {isBrowse && (
@@ -654,8 +583,20 @@ function NotebookSpread({
                   />
                 ))}
               </span>
-              <span className="nb-pagenav__hint">drag to turn the page</span>
             </div>
+          )}
+          {/* Folded-corner "next page" — only in browse (cycles the
+              sections + Room Ledger). */}
+          {isBrowse && (
+            <button
+              type="button"
+              className="nb-corner nb-corner--next"
+              aria-label="Next page"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => commitTurn(1)}
+            >
+              <span className="nb-corner__chev" aria-hidden="true">›</span>
+            </button>
           )}
         </div>
       </Html>

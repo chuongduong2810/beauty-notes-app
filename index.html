@@ -658,12 +658,9 @@
         /* Safety net: content is sized to fit, but never let a stray
            overflow spill the tabs/cards off the page onto the desk. */
         overflow: hidden;
-        /* Pages are turned by dragging — show the grab affordance and stop
-           the browser from claiming the horizontal drag for scrolling. */
-        cursor: grab;
-        touch-action: none;
+        /* Anchor for the folded page-corner turn buttons. */
+        position: relative;
       }
-      .notebook-page:active { cursor: grabbing; }
       /* Headings: bold serif ink with a hand-ruled underline beneath. */
       .notebook-page__brand,
       .notebook-page__title {
@@ -780,23 +777,82 @@
         padding: 18px 2px;
         line-height: 1.5;
       }
-      /* Passive page indicator + drag hint (no arrow buttons — pages are
-         turned by dragging). */
+      /* Passive page indicator (the dots) — navigation itself is the
+         folded page-corners below. */
       .nb-pagenav {
         flex: 0 0 auto;
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 5px;
+        justify-content: center;
         margin-top: auto;
         padding-top: 10px;
+        /* clear the bottom-corner turn buttons */
+        padding-bottom: 4px;
       }
-      .nb-pagenav__hint {
-        font-size: 10px;
-        font-style: italic;
-        letter-spacing: 0.04em;
-        color: rgba(122, 94, 60, 0.7);
+
+      /* Folded page-corners — the "turn the page" affordance. A triangle
+         of slightly-darker paper curls up from the bottom outer corner,
+         lifting on hover, with a faint chevron. Beautiful + book-native;
+         no HUD arrows. */
+      .nb-corner {
+        position: absolute;
+        bottom: 0;
+        width: 34px;
+        height: 34px;
+        border: none;
+        padding: 0;
+        background: transparent;
+        cursor: pointer;
+        color: rgba(110, 74, 38, 0.7);
+        transition: transform 160ms ease, filter 160ms ease;
       }
+      .nb-corner::before {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        width: 100%;
+        height: 100%;
+        box-shadow: 0 1px 5px rgba(90, 55, 20, 0.28);
+      }
+      .nb-corner--next {
+        right: 0;
+      }
+      .nb-corner--next::before {
+        right: 0;
+        background: linear-gradient(
+          315deg,
+          rgba(225, 205, 165, 0.95) 0%,
+          rgba(208, 184, 140, 0.95) 46%,
+          transparent 48%
+        );
+        border-bottom-right-radius: 4px;
+      }
+      .nb-corner--prev {
+        left: 0;
+      }
+      .nb-corner--prev::before {
+        left: 0;
+        background: linear-gradient(
+          45deg,
+          rgba(225, 205, 165, 0.95) 0%,
+          rgba(208, 184, 140, 0.95) 46%,
+          transparent 48%
+        );
+        border-bottom-left-radius: 4px;
+      }
+      .nb-corner:hover {
+        transform: scale(1.12);
+        filter: drop-shadow(0 2px 4px rgba(90, 55, 20, 0.35));
+      }
+      .nb-corner__chev {
+        position: absolute;
+        bottom: 4px;
+        font-size: 13px;
+        line-height: 1;
+        font-family: Georgia, serif;
+      }
+      .nb-corner--next .nb-corner__chev { right: 5px; }
+      .nb-corner--prev .nb-corner__chev { left: 5px; }
+
       .notebook-pageturn__dots {
         display: flex;
         gap: 7px;

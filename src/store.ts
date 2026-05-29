@@ -167,10 +167,6 @@ type AppState = {
    *  Set by RoomScene's window-pointermove raycast; consumed by
    *  endNoteDrag to switch from "re-pin" to "delete". */
   dragOverTrash: boolean;
-  /** True while the User is dragging a Notebook page to turn it. Locks
-   *  the orbit camera (like a Note drag) so the page-turn drag doesn't
-   *  also spin the view. */
-  notebookDragging: boolean;
   /** While set, the NoteMesh for this id plays the crumple-shrink
    *  animation. Cleared (and the Note removed from state) once the
    *  animation finishes. */
@@ -230,7 +226,6 @@ type AppState = {
   beginNoteDrag: (noteId: string) => void;
   setDragPin: (pin: Omit<DragPin, "noteId">) => void;
   setDragOverTrash: (over: boolean) => void;
-  setNotebookDragging: (dragging: boolean) => void;
   endNoteDrag: () => Promise<void>;
   deleteNote: (noteId: string) => Promise<void>;
   crumpleAndDelete: (noteId: string) => Promise<void>;
@@ -270,7 +265,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   drag: null,
   dragOverTrash: false,
-  notebookDragging: false,
   crumplingNoteId: null,
   highlightNoteId: null,
   focusedNoteId: null,
@@ -565,8 +559,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => (s.drag ? { drag: { ...s.drag, ...pin } } : {})),
 
   setDragOverTrash: (over) => set({ dragOverTrash: over }),
-
-  setNotebookDragging: (dragging) => set({ notebookDragging: dragging }),
 
   deleteNote: async (noteId) => {
     const { repo } = get();
