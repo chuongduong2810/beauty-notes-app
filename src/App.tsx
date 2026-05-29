@@ -17,7 +17,6 @@ import { RoomFurniture } from "./components/RoomFurniture";
 import { SplashScreen } from "./components/SplashScreen";
 import { OrbitRadiusKeeper } from "./components/OrbitRadiusKeeper";
 import { ToolPalette } from "./components/ToolPalette";
-import { ZoomDebugOverlay, ZoomDebugProbe } from "./components/ZoomDebug";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
@@ -394,7 +393,6 @@ export function App() {
         />
         <FocusDriver orbitRef={orbitRef} />
         <OrbitRadiusKeeper orbitRef={orbitRef} />
-        <ZoomDebugProbe orbitRef={orbitRef} />
         <EditorRectPublisher />
         {/* Warm hemispheric fill — sky from above, slightly cooler floor
             bounce. Low intensity for a calm tone. */}
@@ -423,7 +421,6 @@ export function App() {
       <NoteEditor />
       <ToolPalette />
       <SplashScreen />
-      <ZoomDebugOverlay />
     </div>
   );
 }
