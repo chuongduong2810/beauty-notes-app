@@ -17,6 +17,7 @@ describe("CanvasRepository — Note CRUD on v2 shape (issue #15)", () => {
       height_cm: 9,
       body: "hello",
       color_id: "warm-white",
+      bookmarked: false,
     });
     expect(inserted.surface_id).toBe(wallNorth.id);
     expect(inserted.body).toBe("hello");
@@ -42,6 +43,7 @@ describe("CanvasRepository — Note CRUD on v2 shape (issue #15)", () => {
       height_cm: 9,
       body: "in A",
       color_id: "warm-white",
+      bookmarked: false,
     });
     await new Promise((r) => setTimeout(r, 5));
     const n2 = await repo.insertNote({
@@ -53,6 +55,7 @@ describe("CanvasRepository — Note CRUD on v2 shape (issue #15)", () => {
       height_cm: 9,
       body: "later in A",
       color_id: "warm-white",
+      bookmarked: false,
     });
     await repo.insertNote({
       surface_id: bSurfaces[0].id,
@@ -63,6 +66,7 @@ describe("CanvasRepository — Note CRUD on v2 shape (issue #15)", () => {
       height_cm: 9,
       body: "in B",
       color_id: "warm-white",
+      bookmarked: false,
     });
 
     const inA = await repo.listNotes(a.id);
@@ -85,6 +89,7 @@ describe("CanvasRepository — Note CRUD on v2 shape (issue #15)", () => {
       height_cm: 9,
       body: "",
       color_id: "warm-white",
+      bookmarked: false,
     });
 
     const moved = await repo.updateNotePin(n.id, {
@@ -110,11 +115,48 @@ describe("CanvasRepository — Note CRUD on v2 shape (issue #15)", () => {
       height_cm: 9,
       body: "old",
       color_id: "warm-white",
+      bookmarked: false,
     });
     const updated = await repo.updateNoteBody(n.id, "new");
     expect(updated.body).toBe("new");
     expect(updated.surface_id).toBe(n.surface_id);
     expect(updated.u).toBeCloseTo(0.3, 5);
     expect(updated.v).toBeCloseTo(0.4, 5);
+  });
+});
+
+describe("CanvasRepository — setNoteBookmark (issue #55)", () => {
+  it("flips the Bookmark flag and bumps updated_at", async () => {
+    const repo = new InMemoryCanvasRepository();
+    const room = await repo.insertRoom("user-1", "Room");
+    const surfaces = await repo.listSurfaces(room.id);
+    const n = await repo.insertNote({
+      surface_id: surfaces[0].id,
+      owner_id: "user-1",
+      u: 0.5,
+      v: 0.5,
+      width_cm: 12,
+      height_cm: 9,
+      body: "",
+      color_id: "warm-white",
+      bookmarked: false,
+    });
+
+    await new Promise((r) => setTimeout(r, 5));
+    const bookmarked = await repo.setNoteBookmark(n.id, true);
+    expect(bookmarked.bookmarked).toBe(true);
+    expect(bookmarked.updated_at > n.updated_at).toBe(true);
+    // Placement is untouched — Bookmark is not Pin.
+    expect(bookmarked.surface_id).toBe(n.surface_id);
+    expect(bookmarked.u).toBeCloseTo(0.5, 5);
+    expect(bookmarked.v).toBeCloseTo(0.5, 5);
+
+    const unbookmarked = await repo.setNoteBookmark(n.id, false);
+    expect(unbookmarked.bookmarked).toBe(false);
+  });
+
+  it("throws on an unknown id", async () => {
+    const repo = new InMemoryCanvasRepository();
+    await expect(repo.setNoteBookmark("nope", true)).rejects.toThrow();
   });
 });

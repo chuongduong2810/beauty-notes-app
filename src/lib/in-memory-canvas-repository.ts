@@ -119,6 +119,17 @@ export class InMemoryCanvasRepository implements CanvasRepository {
     return updated;
   }
 
+  async setNoteBookmark(id: string, bookmarked: boolean): Promise<Note> {
+    let updated: Note | null = null;
+    this.notes = this.notes.map((n) => {
+      if (n.id !== id) return n;
+      updated = { ...n, bookmarked, updated_at: new Date().toISOString() };
+      return updated;
+    });
+    if (!updated) throw new Error(`setNoteBookmark: no Note with id ${id}`);
+    return updated;
+  }
+
   async deleteNote(id: string): Promise<void> {
     const before = this.notes.length;
     this.notes = this.notes.filter((n) => n.id !== id);
