@@ -10,6 +10,7 @@ import {
 } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { Atmosphere } from "./components/Atmosphere";
+import { weatherLightingConfig } from "./lib/atmosphere-config";
 import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { NoteEditor } from "./components/NoteEditor";
 import { RoomScene } from "./components/RoomScene";
@@ -57,10 +58,16 @@ type CameraPose = { yaw: number; pitch: number; distance: number };
  *    `beforeFocus` and re-enables OrbitControls when settled
  */
 /**
- * The warm "window" key light, with its shadow camera frustum following
- * the orbit target every frame (issue #34). This keeps shadow-map
- * resolution concentrated wherever the user is looking and lets us
- * tighten the frustum bounds for sharper penumbras at the same map size.
+ * The orbit-following sky/key light, with its shadow camera frustum
+ * following the orbit target every frame (issue #34). This keeps
+ * shadow-map resolution concentrated wherever the user is looking and
+ * lets us tighten the frustum bounds for sharper penumbras at the same
+ * map size. NOTE: this is a generic directional key light, NOT the
+ * literal Window mesh on wall_west (that's set-dressing — issue #42).
+ *
+ * Colour + intensity come from `weatherLightingConfig()`: under the
+ * fixed rainy Weather the key reads cooler and slightly dimmer, i.e.
+ * overcast daylight (issue #45, ADR-0015).
  *
  * The light DIRECTION is preserved across orbit moves (see
  * `shadowFollowPose`): the light's position and lookAt translate by the
@@ -73,6 +80,7 @@ function KeyLight({
   orbitRef: React.MutableRefObject<OrbitControlsImpl | null>;
 }) {
   const lightRef = useRef<DirectionalLight | null>(null);
+  const weather = weatherLightingConfig();
 
   useFrame(() => {
     const orbit = orbitRef.current;
@@ -92,8 +100,8 @@ function KeyLight({
     <>
       <directionalLight
         ref={lightRef}
-        intensity={1.1}
-        color="#ffe2b0"
+        intensity={weather.keyLightIntensity}
+        color={weather.keyLightColor}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -104,6 +112,18 @@ function KeyLight({
         shadow-camera-right={1.5}
         shadow-camera-top={1.5}
         shadow-camera-bottom={-1.5}
+      />
+      {/* Faint cool fill spilling in from the Window direction (wall_west,
+          -X). Sells the overcast rainy mood without a shadow pass — a
+          soft, calm spill, not a second key. (#45, ADR-0015) */}
+      <directionalLight
+        position={[
+          -weather.windowFillDirection[0],
+          -weather.windowFillDirection[1],
+          -weather.windowFillDirection[2],
+        ]}
+        intensity={weather.windowFillIntensity}
+        color={weather.windowFillColor}
       />
     </>
   );
@@ -433,9 +453,11 @@ export function App() {
         {/* Warm hemispheric fill — sky from above, slightly cooler floor
             bounce. Low intensity for a calm tone. */}
         <hemisphereLight args={["#ffe6c2", "#4f3f2f", 0.5]} />
-        {/* "Window" key light at ~3000 K. Position + shadow frustum
-            follow the orbit target every frame (#34) so shadow-map
-            resolution stays where the user is looking. */}
+        {/* Orbit-following sky/key light (NOT the wall_west Window mesh,
+            #42). Overcast cool-and-dim tone from weatherLightingConfig
+            (#45). Position + shadow frustum follow the orbit target
+            every frame (#34) so shadow-map resolution stays where the
+            user is looking. */}
         <KeyLight orbitRef={orbitRef} />
         {ready && room && (
           <RoomScene
