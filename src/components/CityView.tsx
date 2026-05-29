@@ -9,6 +9,7 @@ import {
 } from "../lib/room";
 import { buildingLayout, windowPlacement } from "../lib/city-layout";
 import { rainStreakLayout, scrollOffset } from "../lib/rain-streaks";
+import { CityRain } from "./CityRain";
 
 /**
  * Window + City set-dressing for the west wall (issue #42, ADR-0015).
@@ -256,6 +257,10 @@ export function CityView() {
                   />
                 </mesh>
               ))}
+              {/* Falling rain (issue #43) — the Weather's rain layer, inside
+                  this RTT sub-scene so it reads through the glass and never
+                  enters the Room. Confined to a slab beyond the west wall. */}
+              <CityRain roomWidthM={ROOM_W} />
             </RenderTexture>
           </meshBasicMaterial>
         </mesh>
