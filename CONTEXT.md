@@ -26,6 +26,10 @@ _Avoid_: Zoom, edit-mode (Focus encompasses both)
 A draggable sticky note Pinned to a Surface at `(u, v)`. The atomic unit of content. Holds a single plain-text body. Dimensions in **centimetres** (default 12 cm × 9 cm). Rendered as a high-poly plane mesh in WebGL with a real cloth simulation (ADR-0012). Visual variety comes from the Palette colour, not text styles.
 _Avoid_: Card, sticky, item, post-it
 
+**Bookmark**:
+A User-set "keep this handy" flag on a Note. Bookmarking does not move or re-Pin the Note — it stays exactly where it is on its Surface; it simply marks the Note so the Notebook can surface it in its Bookmarked section. Persisted as a boolean on the Note. Distinct from **Pin**, which is the (mandatory, every-Note) verb for attaching a Note to a Surface — a Note is always Pinned but only sometimes Bookmarked.
+_Avoid_: Pin (the Surface-attach verb), favourite, star, flag, save
+
 **Camera**:
 The User's orbit-controlled view anchored to a look-at target near the Room's centre at eye level (`(0, 1.5, 0)`). Verbs: rotate (yaw + pitch via click-drag around the target), zoom (wheel — dolly toward / away from the target), and focus-transition (animate target + camera to a Note, animate back). Polar angle is clamped between the floor and ceiling; zoom is clamped between close inspection and "just inside the Room". Yaw + pitch + distance are persisted per Room. (See ADR-0009.)
 _Avoid_: Viewport, view, eye
@@ -64,3 +68,7 @@ _Avoid_: World, environment, skybox, background, scene
 **Weather**:
 The ambient, always-rainy mood of the City: falling rain outside the Window, rain streaks on the glass, and overcast light spilling into the Room. Weather is a fixed atmosphere, not user-configurable state and not persisted — there is one mood (calm rain), no forecast, no time-of-day.
 _Avoid_: Climate, forecast, conditions
+
+**Notebook**:
+A physical organizer resting on the desk — fixed set-dressing like the Window and lamp (ADR-0015), not a Surface and not persisted. Clicking it opens a paper book whose pages are an *index into the Room's existing Notes*: Recently Created, Recently Edited, and Bookmarked. The Notebook holds **no content of its own** — selecting an entry navigates the Camera to that Note's real location on its Surface (a Focus transition) and highlights it. It is a browsing affordance, never a container; the Notes it lists live Pinned to Surfaces exactly as before. Scoped to the current Room. (See ADR-0016.)
+_Avoid_: Journal, book, binder, diary, index (the data structure), panel, menu
