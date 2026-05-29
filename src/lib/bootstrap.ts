@@ -8,6 +8,7 @@ import type { Session } from "@supabase/supabase-js";
 export type BootstrapRoomResult = {
   session: Session;
   room: Room;
+  rooms: Room[];
   surfaces: Surface[];
   notes: Note[];
   annotations: Annotation[];
@@ -24,7 +25,9 @@ export type BootstrapRoomResult = {
  */
 let inFlight: Promise<BootstrapRoomResult> | null = null;
 
-export function bootstrapSessionAndRoom(): Promise<BootstrapRoomResult> {
+export function bootstrapSessionAndRoom(
+  preferredRoomId?: string,
+): Promise<BootstrapRoomResult> {
   if (inFlight) return inFlight;
   inFlight = (async () => {
     const { data: { session: existing } } = await supabase.auth.getSession();
@@ -36,11 +39,12 @@ export function bootstrapSessionAndRoom(): Promise<BootstrapRoomResult> {
       session = data.session;
     }
     const repo = supabaseCanvasRepository(supabase);
-    const { room, surfaces, notes, annotations } = await ensureInitialRoom(
+    const { room, rooms, surfaces, notes, annotations } = await ensureInitialRoom(
       repo,
       session.user.id,
+      preferredRoomId,
     );
-    return { session, room, surfaces, notes, annotations };
+    return { session, room, rooms, surfaces, notes, annotations };
   })();
   // If the bootstrap rejects, drop the cached promise so a manual retry
   // (or HMR reload) can try again instead of resolving to the same error.

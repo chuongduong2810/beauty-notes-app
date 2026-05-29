@@ -13,7 +13,27 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
     <style>
+      /* Two font roles for the app (#22):
+         - --ui-font: Lora — for chrome that lives next to Notes
+           (RoomPicker, ToolPalette, NoteEditor). Same serif Notes
+           themselves use, so chrome and content share one typeface.
+         - --hud-font: JetBrains Mono fallback chain — for the
+           futuristic HUD overlays (HoverTooltip, SplashScreen,
+           RoomSwitchingOverlay). The mono cell width is what makes
+           the typing animations, blinking caret, and corner brackets
+           read as a sci-fi terminal. */
+      :root {
+        --ui-font: "Lora", Georgia, "Times New Roman", serif;
+        --hud-font: "JetBrains Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      }
       html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: #0e0b16; }
+      body { font-family: var(--ui-font); }
+      /* User-agent stylesheets give <button>, <input>, <textarea>,
+         <select> their own font that does NOT inherit from body.
+         Force inheritance so every form element picks up Lora — the
+         ToolPalette pills, RoomPicker trigger, and any future
+         button stay consistent with the rest of the chrome. */
+      button, input, select, textarea { font-family: inherit; }
 
       /* Styled scrollbar for the NoteEditor textarea — appears when a
          focused Note's body is longer than the visible rect. Firefox
@@ -50,7 +70,7 @@
          and scales with camera distance. */
       .hover-toast {
         position: relative;
-        font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+        font-family: var(--hud-font);
         padding: 14px 22px;
         min-width: 220px;
         background:
@@ -287,7 +307,7 @@
             rgba(20, 26, 48, 1) 0%,
             rgba(14, 11, 22, 1) 70%
           );
-        font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+        font-family: var(--hud-font);
         color: #d8fffb;
         user-select: none;
         opacity: 1;
@@ -502,6 +522,89 @@
         }
         100% {
           left: 100%;
+        }
+      }
+
+      /* Small centered "Loading Room" overlay shown while switchRoom
+         / createRoom is in flight (#22). Smaller and less heavy than
+         the bootstrap splash — the canvas is still showing the
+         previous Room behind the dim. */
+      .room-switching {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(10, 8, 16, 0.45);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        pointer-events: all;
+        animation: room-switching-fade 160ms ease-out;
+      }
+      .room-switching__card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+        padding: 22px 28px;
+        border-radius: 12px;
+        background: rgba(20, 16, 28, 0.92);
+        border: 1px solid rgba(92, 242, 232, 0.4);
+        box-shadow:
+          0 0 22px rgba(92, 242, 232, 0.22),
+          0 10px 32px rgba(0, 0, 0, 0.45);
+        color: #d8fffb;
+        font-family: var(--hud-font);
+      }
+      .room-switching__ring {
+        position: relative;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(92, 242, 232, 0.18);
+        box-shadow: inset 0 0 8px rgba(92, 242, 232, 0.08);
+      }
+      .room-switching__ring-arc {
+        position: absolute;
+        inset: -1.5px;
+        border-radius: 50%;
+        background: conic-gradient(
+          from 0deg,
+          transparent 0deg,
+          transparent 270deg,
+          #5cf2e8 360deg
+        );
+        -webkit-mask: radial-gradient(
+          circle,
+          transparent 16px,
+          black 17.5px,
+          black 22px,
+          transparent 23.5px
+        );
+        mask: radial-gradient(
+          circle,
+          transparent 16px,
+          black 17.5px,
+          black 22px,
+          transparent 23.5px
+        );
+        filter: drop-shadow(0 0 5px rgba(92, 242, 232, 0.7));
+        animation: splash-spin 1.1s linear infinite;
+      }
+      .room-switching__label {
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #5cf2e8;
+        text-shadow: 0 0 6px rgba(92, 242, 232, 0.55);
+      }
+      @keyframes room-switching-fade {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
         }
       }
     </style>
