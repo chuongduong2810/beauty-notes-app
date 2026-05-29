@@ -13,13 +13,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
     <style>
-      /* Single source of truth for the app's font (#22). Lora — the
-         same serif used by Note content (NoteEditor + the WebGL
-         <Text> in NoteMesh) — drives every UI overlay (RoomPicker,
-         ToolPalette, HoverTooltip, SplashScreen) so chrome and
-         content share one typeface. Loaded via Google Fonts above. */
+      /* Two font roles for the app (#22):
+         - --ui-font: Lora — for chrome that lives next to Notes
+           (RoomPicker, ToolPalette, NoteEditor). Same serif Notes
+           themselves use, so chrome and content share one typeface.
+         - --hud-font: JetBrains Mono fallback chain — for the
+           futuristic HUD overlays (HoverTooltip, SplashScreen,
+           RoomSwitchingOverlay). The mono cell width is what makes
+           the typing animations, blinking caret, and corner brackets
+           read as a sci-fi terminal. */
       :root {
         --ui-font: "Lora", Georgia, "Times New Roman", serif;
+        --hud-font: "JetBrains Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
       }
       html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: #0e0b16; }
       body { font-family: var(--ui-font); }
@@ -65,7 +70,7 @@
          and scales with camera distance. */
       .hover-toast {
         position: relative;
-        font-family: var(--ui-font);
+        font-family: var(--hud-font);
         padding: 14px 22px;
         min-width: 220px;
         background:
@@ -302,7 +307,7 @@
             rgba(20, 26, 48, 1) 0%,
             rgba(14, 11, 22, 1) 70%
           );
-        font-family: var(--ui-font);
+        font-family: var(--hud-font);
         color: #d8fffb;
         user-select: none;
         opacity: 1;
@@ -550,7 +555,7 @@
           0 0 22px rgba(92, 242, 232, 0.22),
           0 10px 32px rgba(0, 0, 0, 0.45);
         color: #d8fffb;
-        font-family: var(--ui-font);
+        font-family: var(--hud-font);
       }
       .room-switching__ring {
         position: relative;
