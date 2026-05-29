@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSpring, animated } from "@react-spring/three";
+import { useFrame, useThree } from "@react-three/fiber";
 import { Html, Text } from "@react-three/drei";
 import { createPaperTexture } from "../lib/note-paper-texture";
 import { notebookCoverRotation } from "../lib/notebook-pose";
@@ -118,6 +119,23 @@ function NotebookSpread({
   const sections = useMemo(() => buildNotebookSections(notes), [notes]);
   const [section, setSection] = useState<NotebookSectionKey>("recentlyCreated");
 
+  // The page content is DOM (drei <Html>) painted over the canvas — it
+  // has no depth occlusion, so without this it bleeds through the book's
+  // back cover when the user orbits behind the desk. Hide the spread
+  // whenever the camera is on the far (north / -Z) side of the book so
+  // from behind you just see the solid cover. Flips rarely, so we only
+  // re-render on a genuine front↔back change, not every frame.
+  const { camera } = useThree();
+  const [front, setFront] = useState(true);
+  const frontRef = useRef(true);
+  useFrame(() => {
+    const isFront = camera.position.z > BOOK_POSITION[2] + 0.1;
+    if (isFront !== frontRef.current) {
+      frontRef.current = isFront;
+      setFront(isFront);
+    }
+  });
+
   const entries = sections[section];
   const sectionIndex = NOTEBOOK_SECTION_KEYS.indexOf(section);
 
@@ -132,6 +150,9 @@ function NotebookSpread({
     section === "bookmarked"
       ? "Bookmark a note to keep it here."
       : "No notes yet — double-click a wall to pin one.";
+
+  // Viewing from behind the book → show only the cover, not the content.
+  if (!front) return null;
 
   return (
     <group position={[0, COVER_THICKNESS + PAGE_STACK_HEIGHT + 0.003, 0]}>
