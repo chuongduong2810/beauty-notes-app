@@ -636,94 +636,93 @@
       }
 
       /* ── Notebook pages (issue #57, ADR-0016) ──────────────────────
-         Page content rides flat on the open book via <Html transform>.
-         Styled as warm cream paper with a Lora serif so it reads as a
-         written-on page rather than a UI panel. Sizes are in px; the
-         drei distanceFactor in Notebook.tsx scales them onto the ~0.2 m
-         page, so these are "page-relative" rather than screen pixels. */
+         Page content is PRINTED onto the open book's ruled paper via
+         <Html transform>: the DOM is fully transparent so the page
+         plane's ruled lines + red margin show straight through, and the
+         only opaque marks are the ink (headings, list rows) and the
+         translucent tab "stickers". No card, no panel. Sizes are in px;
+         the drei distanceFactor in Notebook.tsx scales them onto the
+         ~0.2 m page, so these are "page-relative" not screen pixels. */
       .notebook-page {
-        width: 150px;
-        height: 196px;
+        display: flex;
+        flex-direction: column;
+        width: 184px;
+        height: 240px;
         box-sizing: border-box;
-        padding: 16px 15px;
-        /* The card IS the page surface — fills the open page, so a flat
-           cream paper with only an inner gutter shadow at the spine, no
-           rounded "floating card" corners. */
-        background: #f6efda;
-        box-shadow: inset 18px 0 26px -18px rgba(120, 90, 50, 0.35);
+        padding: 18px 18px 14px;
+        background: transparent;
         font-family: "Lora", Georgia, serif;
-        color: #4a3a28;
+        color: #43301f;
         user-select: none;
         -webkit-user-select: none;
       }
-      .notebook-page--left {
-        /* gutter shadow on the opposite (right) edge for the left page */
-        box-shadow: inset -18px 0 26px -18px rgba(120, 90, 50, 0.35);
-      }
-      .notebook-page__brand {
-        font-size: 13px;
+      /* Headings: bold serif ink with a hand-ruled underline beneath. */
+      .notebook-page__brand,
+      .notebook-page__title {
+        flex: 0 0 auto;
+        font-size: 16px;
         font-weight: 700;
-        letter-spacing: 0.04em;
-        color: #6e4a26;
-        border-bottom: 1px solid rgba(110, 74, 38, 0.3);
-        padding-bottom: 8px;
-        margin-bottom: 12px;
+        letter-spacing: 0.005em;
+        color: #43301f;
+        padding-bottom: 7px;
+        margin: 0 0 14px;
+        border-bottom: 2px solid rgba(67, 48, 31, 0.5);
       }
       .notebook-tabs {
+        flex: 0 0 auto;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 11px;
       }
+      /* Tabs read as translucent "stickers" pressed onto the page — the
+         ruled lines stay faintly visible through them. */
       .notebook-tab {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 6px;
+        gap: 8px;
         width: 100%;
-        padding: 8px 9px;
-        border: 1px solid rgba(110, 74, 38, 0.22);
-        border-radius: 6px;
-        background: rgba(255, 255, 255, 0.32);
+        min-height: 44px;
+        padding: 9px 13px;
+        border: 1px solid rgba(120, 80, 40, 0.32);
+        border-radius: 11px;
+        background: rgba(255, 252, 244, 0.22);
         font-family: inherit;
-        font-size: 11px;
-        color: #4a3a28;
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.12;
+        color: #43301f;
         text-align: left;
         cursor: pointer;
-        transition: background 140ms ease, border-color 140ms ease;
+        transition: background 140ms ease, border-color 140ms ease,
+          box-shadow 140ms ease;
       }
       .notebook-tab:hover {
-        background: rgba(255, 255, 255, 0.6);
+        background: rgba(255, 252, 244, 0.4);
       }
       .notebook-tab--active {
-        background: #e6b15a;
-        border-color: #c98a2e;
-        color: #3a2a16;
-        font-weight: 700;
-        box-shadow: 0 1px 4px rgba(120, 80, 30, 0.25);
+        background: rgba(231, 168, 64, 0.8);
+        border-color: rgba(193, 122, 28, 0.85);
+        color: #3a2410;
+        box-shadow: 0 2px 9px rgba(150, 90, 20, 0.32);
       }
       .notebook-tab__count {
-        font-size: 10px;
-        opacity: 0.7;
+        font-size: 13px;
+        font-weight: 700;
+        color: #5b4326;
         background: rgba(110, 74, 38, 0.16);
-        border-radius: 8px;
-        padding: 1px 6px;
-        min-width: 14px;
+        border-radius: 11px;
+        padding: 2px 10px;
+        min-width: 18px;
         text-align: center;
       }
-      .notebook-page__title {
-        font-size: 12px;
-        font-weight: 700;
-        color: #6e4a26;
-        border-bottom: 1px solid rgba(110, 74, 38, 0.3);
-        padding-bottom: 6px;
-        margin-bottom: 8px;
-      }
       .notebook-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
         display: flex;
         flex-direction: column;
-        gap: 5px;
-        height: 128px;
-        overflow: hidden;
+        gap: 15px;
       }
       .notebook-list--flip {
         transform-origin: left center;
@@ -739,83 +738,88 @@
           transform: perspective(420px) rotateY(0deg);
         }
       }
+      /* List rows: a colour swatch + inked title + right-aligned time,
+         printed straight on the ruling — no row background. */
       .notebook-entry {
         display: flex;
         align-items: center;
-        gap: 7px;
+        gap: 12px;
         width: 100%;
-        padding: 5px 6px;
+        padding: 3px 2px;
         border: none;
-        border-bottom: 1px solid rgba(110, 74, 38, 0.14);
         background: transparent;
         font-family: inherit;
         text-align: left;
         cursor: pointer;
-        border-radius: 4px;
+        border-radius: 6px;
         transition: background 120ms ease;
       }
       .notebook-entry:hover {
-        background: rgba(230, 177, 90, 0.28);
+        background: rgba(231, 168, 64, 0.18);
       }
       .notebook-entry__swatch {
         flex: 0 0 auto;
-        width: 11px;
-        height: 11px;
-        border-radius: 3px;
-        box-shadow: 0 1px 2px rgba(80, 50, 20, 0.3);
+        width: 19px;
+        height: 19px;
+        border-radius: 5px;
+        border: 1px solid rgba(120, 80, 40, 0.4);
+        box-shadow: 0 1px 2px rgba(80, 50, 20, 0.25);
       }
       .notebook-entry__text {
         flex: 1 1 auto;
-        font-size: 11px;
-        color: #3f3020;
+        font-size: 16px;
+        font-weight: 700;
+        color: #34281b;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .notebook-entry__time {
         flex: 0 0 auto;
-        font-size: 9px;
+        font-size: 12px;
         color: #8a6e4c;
       }
       .notebook-empty {
-        font-size: 11px;
+        font-size: 14px;
         font-style: italic;
-        color: #8a6e4c;
-        padding: 14px 4px;
+        color: #7a5e3c;
+        padding: 18px 2px;
         line-height: 1.5;
       }
       .notebook-pageturn {
+        flex: 0 0 auto;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        margin-top: 10px;
-        padding-top: 6px;
-        border-top: 1px solid rgba(110, 74, 38, 0.2);
+        justify-content: center;
+        gap: 20px;
+        margin-top: auto;
+        padding-top: 10px;
       }
       .notebook-pageturn__btn {
         border: none;
         background: transparent;
         color: #6e4a26;
-        font-size: 18px;
+        font-size: 22px;
         line-height: 1;
         cursor: pointer;
         padding: 0 6px;
+        font-family: Georgia, serif;
       }
       .notebook-pageturn__btn:hover {
         color: #c98a2e;
       }
       .notebook-pageturn__dots {
         display: flex;
-        gap: 5px;
+        gap: 7px;
       }
       .notebook-pageturn__dot {
-        width: 5px;
-        height: 5px;
+        width: 7px;
+        height: 7px;
         border-radius: 50%;
-        background: rgba(110, 74, 38, 0.28);
+        background: rgba(110, 74, 38, 0.3);
       }
       .notebook-pageturn__dot--on {
-        background: #c98a2e;
+        background: #e0962a;
       }
     </style>
   </head>
