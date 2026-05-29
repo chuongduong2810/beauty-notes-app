@@ -704,9 +704,12 @@ export function Notebook({
     setHovered(false);
     document.body.style.cursor = "";
   };
+  // Clicking the book only OPENS it. Closing is via Escape or the
+  // click-away catcher (clicking outside) — if this also toggled closed,
+  // pressing a page to start a page-turn drag would slam the book shut.
   const onClickBook = (e: { stopPropagation: () => void }) => {
     e.stopPropagation();
-    setOpen((o) => !o);
+    if (!open) setOpen(true);
   };
 
   const handleSelect = (noteId: string) => {
