@@ -17,6 +17,7 @@ import { RoomFurniture } from "./components/RoomFurniture";
 import { SplashScreen } from "./components/SplashScreen";
 import { OrbitRadiusKeeper } from "./components/OrbitRadiusKeeper";
 import { RoomPicker } from "./components/RoomPicker";
+import { RoomSwitchingOverlay } from "./components/RoomSwitchingOverlay";
 import { ToolPalette } from "./components/ToolPalette";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
@@ -277,9 +278,17 @@ export function App() {
   // the user's yaw/pitch on exit. Depending on room.id alone keeps
   // initial-load behaviour and lets FocusDriver own the unfocus
   // transition cleanly.
+  //
+  // CRITICAL on Room switch (issue #22): `controls.target` migrates
+  // during a Room session (wheel-zoom toward cursor pushes it around
+  // via OrbitRadiusKeeper). On switch we must reset target back to
+  // ORBIT_TARGET, otherwise the new Room's spherical pose composes
+  // off the previous Room's wheel-zoomed target and the camera lands
+  // somewhere unexpected.
   useEffect(() => {
     if (!ready || !room || !orbitRef.current || focusedNoteId) return;
     const controls = orbitRef.current;
+    controls.target.set(ORBIT_TARGET[0], ORBIT_TARGET[1], ORBIT_TARGET[2]);
     const sph = new Spherical(
       room.camera_distance,
       room.camera_pitch,
@@ -448,6 +457,7 @@ export function App() {
       <NoteEditor />
       <RoomPicker />
       <ToolPalette />
+      <RoomSwitchingOverlay />
       <SplashScreen />
     </div>
   );

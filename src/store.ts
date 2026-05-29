@@ -93,6 +93,10 @@ type AppState = {
   session: Session | null;
   repo: CanvasRepository | null;
   ready: boolean;
+  /** True while a Room switch / create is in flight. Drives the
+   *  small "Loading Room" overlay (#22). Distinct from `ready` so
+   *  the full SplashScreen only shows during initial bootstrap. */
+  switchingRoom: boolean;
 
   currentRoom: Room | null;
   /**
@@ -195,6 +199,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   session: null,
   repo: null,
   ready: false,
+  switchingRoom: false,
 
   currentRoom: null,
   rooms: [],
@@ -243,29 +248,39 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { repo, currentRoom } = get();
     if (!repo) return;
     if (currentRoom?.id === roomId) return;
-    const bundle = await loadRoom(repo, roomId);
-    if (!bundle) return;
-    get().setRoom(
-      bundle.room,
-      bundle.surfaces,
-      bundle.notes,
-      bundle.annotations,
-    );
-    pushRoomUrl(bundle.room.id);
+    set({ switchingRoom: true });
+    try {
+      const bundle = await loadRoom(repo, roomId);
+      if (!bundle) return;
+      get().setRoom(
+        bundle.room,
+        bundle.surfaces,
+        bundle.notes,
+        bundle.annotations,
+      );
+      pushRoomUrl(bundle.room.id);
+    } finally {
+      set({ switchingRoom: false });
+    }
   },
 
   createRoom: async (name = "Untitled") => {
     const { repo, session } = get();
     if (!repo || !session) return null;
-    const room = await repo.insertRoom(session.user.id, name);
-    const surfaces = await repo.listSurfaces(room.id);
-    // Refresh the rooms list so the picker dropdown shows the new
-    // Room straight away.
-    const rooms = await repo.listRooms(session.user.id);
-    set({ rooms });
-    get().setRoom(room, surfaces, [], []);
-    pushRoomUrl(room.id);
-    return room;
+    set({ switchingRoom: true });
+    try {
+      const room = await repo.insertRoom(session.user.id, name);
+      const surfaces = await repo.listSurfaces(room.id);
+      // Refresh the rooms list so the picker dropdown shows the new
+      // Room straight away.
+      const rooms = await repo.listRooms(session.user.id);
+      set({ rooms });
+      get().setRoom(room, surfaces, [], []);
+      pushRoomUrl(room.id);
+      return room;
+    } finally {
+      set({ switchingRoom: false });
+    }
   },
 
   setCurrentTool: (tool) =>
