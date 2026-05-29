@@ -39,6 +39,13 @@ const NOTE_BODY_DEBOUNCE_MS = 500;
 const CRUMPLE_DURATION_MS = 900;
 
 /**
+ * How long a Note stays "highlighted" after the User navigates to it
+ * from the Notebook (issue #57). NoteMesh reads `highlightNoteId` and
+ * plays a brief emissive pulse; the flag auto-clears after this window.
+ */
+const HIGHLIGHT_DURATION_MS = 1400;
+
+/**
  * Push `/room/<id>` to the browser history when the active Room
  * changes inside a store action (issue #22). Guarded for SSR /
  * non-DOM environments and no-ops when the URL already matches so
@@ -145,6 +152,10 @@ type AppState = {
    *  animation. Cleared (and the Note removed from state) once the
    *  animation finishes. */
   crumplingNoteId: string | null;
+  /** While set, the NoteMesh for this id plays a brief emissive pulse —
+   *  the "highlight" when the User navigates to a Note from the Notebook
+   *  (issue #57). Auto-cleared after HIGHLIGHT_DURATION_MS. */
+  highlightNoteId: string | null;
   focusedNoteId: string | null;
   beforeFocus: CameraPose | null;
 
@@ -193,6 +204,9 @@ type AppState = {
 
   focusNote: (noteId: string, beforeFocus: CameraPose) => void;
   unfocusNote: () => Promise<void>;
+  /** Briefly highlight a Note (emissive pulse) — used when navigating to
+   *  it from the Notebook (issue #57). Auto-clears after a short window. */
+  highlightNote: (noteId: string) => void;
 
   setEditingBody: (body: string) => void;
   setEditingRect: (rect: ScreenRect | null) => void;
@@ -218,6 +232,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   drag: null,
   dragOverTrash: false,
   crumplingNoteId: null,
+  highlightNoteId: null,
   focusedNoteId: null,
   beforeFocus: null,
 
@@ -600,6 +615,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       editingNoteId: null,
       editingRect: null,
     });
+  },
+
+  highlightNote: (noteId) => {
+    set({ highlightNoteId: noteId });
+    if (typeof window === "undefined") return;
+    window.setTimeout(() => {
+      // Only clear if a newer highlight hasn't superseded this one.
+      if (get().highlightNoteId === noteId) set({ highlightNoteId: null });
+    }, HIGHLIGHT_DURATION_MS);
   },
 
   setEditingBody: (body) => {

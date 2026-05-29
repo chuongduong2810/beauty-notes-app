@@ -402,6 +402,19 @@ export function App() {
     [focusNote],
   );
 
+  // Selecting a Note from the Notebook (issue #57): reuse the exact
+  // click-to-focus path (snapshots the orbit pose + runs the Focus
+  // transition) so the camera-pose math isn't duplicated, then add a
+  // brief arrival highlight pulse.
+  const highlightNote = useAppStore((s) => s.highlightNote);
+  const onNotebookSelect = useCallback(
+    (noteId: string) => {
+      onNoteClick(noteId);
+      highlightNote(noteId);
+    },
+    [onNoteClick, highlightNote],
+  );
+
   return (
     <div
       style={{
@@ -480,7 +493,7 @@ export function App() {
             (ADR-0016) that opens/closes with a react-spring animation
             (#56). Page content is mounted by #57 onto the page anchors
             it leaves on the open spread. */}
-        <Notebook />
+        <Notebook onSelectNote={onNotebookSelect} />
         {/* Window on wall_west looking onto a foggy City skyline (#42).
             Set-dressing in front of the wall + a procedural skyline beyond
             the Room boundary; primitive geometry only. */}
