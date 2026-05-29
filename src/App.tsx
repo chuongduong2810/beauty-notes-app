@@ -337,14 +337,18 @@ export function App() {
   const drawingStroke = useAppStore(
     (s) => s.penState.inProgressStroke !== null,
   );
+  // Same rationale for an active Note drag (issue #16): while the user is
+  // dragging a Note across Surfaces, a stray drag-orbit would fight the
+  // re-Pin gesture and spin the camera. Lock orbit until the drag commits.
+  const draggingNote = useAppStore((s) => s.drag !== null);
   const inPenMode = useAppStore((s) => s.penState.currentTool === "pen");
   const beforeFocus = useAppStore((s) => s.beforeFocus);
   useEffect(() => {
     const c = orbitRef.current;
     if (!c) return;
     if (focusedNoteId || beforeFocus) return;
-    c.enabled = !drawingStroke;
-  }, [drawingStroke, focusedNoteId, beforeFocus]);
+    c.enabled = !drawingStroke && !draggingNote;
+  }, [drawingStroke, draggingNote, focusedNoteId, beforeFocus]);
 
   // Escape exits focus.
   useEffect(() => {
