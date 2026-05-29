@@ -13,7 +13,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
     <style>
+      /* Single source of truth for the app's font (#22). Lora — the
+         same serif used by Note content (NoteEditor + the WebGL
+         <Text> in NoteMesh) — drives every UI overlay (RoomPicker,
+         ToolPalette, HoverTooltip, SplashScreen) so chrome and
+         content share one typeface. Loaded via Google Fonts above. */
+      :root {
+        --ui-font: "Lora", Georgia, "Times New Roman", serif;
+      }
       html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: #0e0b16; }
+      body { font-family: var(--ui-font); }
 
       /* Styled scrollbar for the NoteEditor textarea — appears when a
          focused Note's body is longer than the visible rect. Firefox
@@ -50,7 +59,7 @@
          and scales with camera distance. */
       .hover-toast {
         position: relative;
-        font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+        font-family: var(--ui-font);
         padding: 14px 22px;
         min-width: 220px;
         background:
@@ -287,7 +296,7 @@
             rgba(20, 26, 48, 1) 0%,
             rgba(14, 11, 22, 1) 70%
           );
-        font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+        font-family: var(--ui-font);
         color: #d8fffb;
         user-select: none;
         opacity: 1;

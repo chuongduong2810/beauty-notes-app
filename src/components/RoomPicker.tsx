@@ -34,8 +34,7 @@ const triggerStyle: CSSProperties = {
   fontSize: 13,
   fontWeight: 500,
   cursor: "pointer",
-  fontFamily:
-    'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+  // fontFamily inherited from body — see --ui-font in index.html.
 };
 
 const chevronStyle: CSSProperties = {
