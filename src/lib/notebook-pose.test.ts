@@ -11,9 +11,9 @@ describe("notebookCoverRotation — front-cover hinge angle (issue #56)", () => 
     expect(notebookCoverRotation(false)).toBe(0);
   });
 
-  it("open → cover swung up past vertical (~150°)", () => {
+  it("open → cover fully open, flat to the left (180°)", () => {
     expect(notebookCoverRotation(true)).toBe(NOTEBOOK_COVER_OPEN_RAD);
-    expect(notebookCoverRotation(true)).toBeCloseTo((150 * Math.PI) / 180, 6);
+    expect(notebookCoverRotation(true)).toBeCloseTo(Math.PI, 6);
   });
 
   it("opens past vertical so the cover falls open rather than standing up", () => {
