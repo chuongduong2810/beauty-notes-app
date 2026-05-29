@@ -838,10 +838,17 @@ export function Notebook({
           </animated.group>
         </group>
 
-        {/* Open spread page planes. */}
+        {/* Open spread page planes. They swallow pointer-downs so a click
+            on the paper doesn't fall through to the click-away catcher
+            behind and close the book (the catcher only fires on a true
+            click OUTSIDE the book now). */}
         {open && (
           <group position={[0, COVER_THICKNESS + PAGE_STACK_HEIGHT + 0.002, 0]}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-BOOK_WIDTH / 2, 0, 0]}>
+            <mesh
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[-BOOK_WIDTH / 2, 0, 0]}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               <planeGeometry args={[BOOK_WIDTH * 0.94, BOOK_DEPTH * 0.94]} />
               <meshStandardMaterial
                 color={OPEN_PAGE_COLOR}
@@ -850,7 +857,11 @@ export function Notebook({
                 metalness={0}
               />
             </mesh>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[BOOK_WIDTH / 2, 0, 0]}>
+            <mesh
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[BOOK_WIDTH / 2, 0, 0]}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               <planeGeometry args={[BOOK_WIDTH * 0.94, BOOK_DEPTH * 0.94]} />
               <meshStandardMaterial
                 color={OPEN_PAGE_COLOR}
