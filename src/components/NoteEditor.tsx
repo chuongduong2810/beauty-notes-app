@@ -30,6 +30,7 @@ export function NoteEditor() {
   const body = editingNote?.body ?? "";
   const setEditingBody = useAppStore((s) => s.setEditingBody);
   const unfocusNote = useAppStore((s) => s.unfocusNote);
+  const toggleBookmark = useAppStore((s) => s.toggleBookmark);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -92,11 +93,48 @@ export function NoteEditor() {
     wordBreak: "break-word",
   };
 
+  // Bookmark ribbon, sized relative to the projected note so it scales
+  // with camera distance. Anchored just inside the top-right corner.
+  const bookmarkSizePx = Math.max(14, Math.min(28, editingRect.height * 0.16));
+  const bookmarkInsetPx = bookmarkSizePx * 0.35;
+  const bookmarkStyle: CSSProperties = {
+    left: editingRect.left + editingRect.width - bookmarkSizePx - bookmarkInsetPx,
+    top: editingRect.top + bookmarkInsetPx,
+    width: bookmarkSizePx,
+    height: bookmarkSizePx,
+  };
+
   return (
-    <textarea
-      ref={textareaRef}
-      data-note-editor
-      style={style}
+    <>
+      <button
+        type="button"
+        data-note-bookmark
+        aria-pressed={editingNote.bookmarked}
+        aria-label={editingNote.bookmarked ? "Remove bookmark" : "Bookmark this note"}
+        title={editingNote.bookmarked ? "Bookmarked — keep handy" : "Bookmark — keep handy"}
+        style={bookmarkStyle}
+        // Don't blur the textarea (which would save + unfocus) when the
+        // ribbon is pressed — keep the edit session alive.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => void toggleBookmark(editingNote.id)}
+      >
+        <svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 24 24"
+          fill={editingNote.bookmarked ? "currentColor" : "none"}
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+        </svg>
+      </button>
+      <textarea
+        ref={textareaRef}
+        data-note-editor
+        style={style}
       value={body}
       autoFocus
       // Disable browser spellcheck/autocorrect/autocapitalise — for
@@ -117,6 +155,7 @@ export function NoteEditor() {
       onBlur={() => {
         void unfocusNote();
       }}
-    />
+      />
+    </>
   );
 }

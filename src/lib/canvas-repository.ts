@@ -39,6 +39,8 @@ export interface CanvasRepository {
   ): Promise<Note>;
   /** Replace a Note's body text. Debounced commit from Focus editing. */
   updateNoteBody(id: string, body: string): Promise<Note>;
+  /** Set a Note's Bookmark ("keep handy") flag (issue #55). */
+  setNoteBookmark(id: string, bookmarked: boolean): Promise<Note>;
   /** Permanently remove a Note. Called when the user drops it on the trash. */
   deleteNote(id: string): Promise<void>;
 

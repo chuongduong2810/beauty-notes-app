@@ -16,6 +16,7 @@ describe("loadRoom — fetch Room + Surfaces + Notes + Annotations (issue #22)",
       height_cm: 9,
       body: "hi",
       color_id: "paper",
+      bookmarked: false,
     });
     const ann = await repo.insertAnnotation({
       surface_id: surfaces[0].id,
@@ -62,6 +63,7 @@ describe("loadRoom — fetch Room + Surfaces + Notes + Annotations (issue #22)",
       height_cm: 9,
       body: "in A",
       color_id: "paper",
+      bookmarked: false,
     });
     await repo.insertNote({
       surface_id: sB[0].id,
@@ -72,6 +74,7 @@ describe("loadRoom — fetch Room + Surfaces + Notes + Annotations (issue #22)",
       height_cm: 9,
       body: "in B",
       color_id: "paper",
+      bookmarked: false,
     });
 
     const bundle = await loadRoom(repo, roomB.id);

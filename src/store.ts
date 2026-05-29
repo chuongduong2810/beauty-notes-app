@@ -187,6 +187,9 @@ type AppState = {
   endNoteDrag: () => Promise<void>;
   deleteNote: (noteId: string) => Promise<void>;
   crumpleAndDelete: (noteId: string) => Promise<void>;
+  /** Flip a Note's Bookmark ("keep handy") flag (issue #55). Optimistic
+   *  local flip, then persist; rolls back on failure. */
+  toggleBookmark: (noteId: string) => Promise<void>;
 
   focusNote: (noteId: string, beforeFocus: CameraPose) => void;
   unfocusNote: () => Promise<void>;
@@ -462,6 +465,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       height_cm: DEFAULT_NOTE_HEIGHT_CM,
       body: "",
       color_id: DEFAULT_NOTE_COLOR_ID,
+      bookmarked: false,
     });
     set((s) => ({ notes: [...s.notes, note] }));
   },
@@ -504,6 +508,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     await new Promise((resolve) => setTimeout(resolve, CRUMPLE_DURATION_MS));
     set({ crumplingNoteId: null });
     await get().deleteNote(noteId);
+  },
+
+  toggleBookmark: async (noteId) => {
+    const { repo } = get();
+    // Optimistic flip so the ribbon toggles immediately; on persistence
+    // failure we restore the previous flag.
+    const previous = get().notes.find((n) => n.id === noteId);
+    if (!previous) return;
+    const next = !previous.bookmarked;
+    set((s) => ({
+      notes: s.notes.map((n) =>
+        n.id === noteId ? { ...n, bookmarked: next } : n,
+      ),
+    }));
+    if (!repo) return;
+    try {
+      await repo.setNoteBookmark(noteId, next);
+    } catch (err) {
+      console.warn("setNoteBookmark failed; rolling back", err);
+      set((s) => ({
+        notes: s.notes.map((n) =>
+          n.id === noteId ? { ...n, bookmarked: previous.bookmarked } : n,
+        ),
+      }));
+    }
   },
 
   endNoteDrag: async () => {

@@ -62,6 +62,33 @@
         background-clip: content-box;
       }
 
+      /* Bookmark ("keep handy") toggle for the focused Note (issue #55).
+         A small ribbon button anchored to the focused Note's top-right
+         corner. Off state is a hollow outline tucked into the paper;
+         on state fills with the warm accent so a Bookmarked Note reads
+         at a glance. Sized in px from the projected rect by inline
+         style so it scales with camera distance like the textarea. */
+      button[data-note-bookmark] {
+        position: fixed;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: rgba(42, 35, 48, 0.45);
+        cursor: pointer;
+        line-height: 0;
+        z-index: 21;
+        transition: color 120ms ease, transform 120ms ease;
+      }
+      button[data-note-bookmark]:hover {
+        color: rgba(42, 35, 48, 0.75);
+        transform: scale(1.08);
+      }
+      button[data-note-bookmark][aria-pressed="true"] {
+        color: #b8553f;
+      }
+
       /* Futuristic 3D hover toast for interactive 3D props (issue
          #35 follow-up). Glass background, cyan neon border, HUD
          corner brackets, scanline shimmer, blinking terminal cursor,
