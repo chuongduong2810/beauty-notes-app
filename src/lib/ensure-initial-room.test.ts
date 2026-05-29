@@ -59,6 +59,7 @@ describe("ensureInitialRoom — idempotent first-run Room bootstrap (issue #13)"
       height_cm: 9,
       body: "welcome",
       color_id: "warm-white",
+      bookmarked: false,
     });
     const ann = await repo.insertAnnotation({
       surface_id: surfaces[0].id,

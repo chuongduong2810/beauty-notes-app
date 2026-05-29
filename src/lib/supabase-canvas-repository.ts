@@ -121,6 +121,17 @@ export function supabaseCanvasRepository(
       return data as Note;
     },
 
+    async setNoteBookmark(id, bookmarked) {
+      const { data, error } = await supabase
+        .from("notes")
+        .update({ bookmarked })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Note;
+    },
+
     async deleteNote(id) {
       const { error } = await supabase.from("notes").delete().eq("id", id);
       if (error) throw error;

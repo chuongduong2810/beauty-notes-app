@@ -61,6 +61,12 @@ export type Note = {
   height_cm: number;
   body: string;
   color_id: string;
+  /**
+   * User-set "keep this handy" flag (issue #55). Surfaces the Note in the
+   * desk Notebook's Bookmarked section. NOT Pin — bookmarking does not
+   * move or re-Pin the Note; it stays exactly where it is on its Surface.
+   */
+  bookmarked: boolean;
   created_at: string;
   updated_at: string;
 };
