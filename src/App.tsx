@@ -16,6 +16,7 @@ import { RoomScene } from "./components/RoomScene";
 import { RoomFurniture } from "./components/RoomFurniture";
 import { SplashScreen } from "./components/SplashScreen";
 import { ToolPalette } from "./components/ToolPalette";
+import { WheelZoomDriver } from "./components/WheelZoomDriver";
 import { ZoomDebugOverlay, ZoomDebugProbe } from "./components/ZoomDebug";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
@@ -33,15 +34,6 @@ const ORBIT_TARGET: [number, number, number] = [0, 1.5, 0];
  *  that the user can dolly in and out as far as they like. */
 const ORBIT_MIN_DISTANCE = 0.001;
 const ORBIT_MAX_DISTANCE = Infinity;
-/**
- * Wheel-zoom factor per tick is `Math.pow(0.95, zoomSpeed)`. At our
- * old value of 2.0 each tick only shrank the orbit radius by ~10% —
- * starting from 3 m it took ~70 ticks to reach the millimetre floor,
- * which read as "I can't get any closer". At 5.0 each tick is ~22%,
- * so the user reaches close-up in ~10 ticks. Higher (8–10) feels
- * twitchy on touchpads.
- */
-const ORBIT_ZOOM_SPEED = 5.0;
 const ORBIT_MIN_POLAR_ANGLE = 0.17;
 const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17;
 
@@ -388,26 +380,16 @@ export function App() {
           minPolarAngle={ORBIT_MIN_POLAR_ANGLE}
           maxPolarAngle={ORBIT_MAX_POLAR_ANGLE}
           rotateSpeed={0.7}
-          zoomSpeed={ORBIT_ZOOM_SPEED}
-          // Wheel-zoom dollies toward whatever's under the cursor and
-          // shifts the orbit target in that direction. Without this
-          // the camera can only dolly toward the fixed orbit pivot at
-          // room centre — so the user can never wheel "into" a wall.
-          // Standard Figma / Blender / Photoshop zoom-to-cursor.
-          zoomToCursor
-          // CRITICAL pairing with zoomToCursor: OrbitControls' default
-          // target update after a cursor zoom intersects camera-forward
-          // with a HORIZONTAL plane through the old target. That fails
-          // when the camera is looking near-horizontally — exactly the
-          // "user staring at a wall" case — and falls back to lookAt,
-          // leaving the target glued to room centre. Enabling screen-
-          // space panning swaps that for `target = camera + forward *
-          // newRadius`, which works at any angle and lets the pivot
-          // actually migrate to the wall under the cursor.
-          screenSpacePanning
+          // Native wheel zoom is disabled — see <WheelZoomDriver>. The
+          // three-stdlib zoomToCursor + screenSpacePanning combo caps
+          // total dolly at initialRadius (camera asymptotes in mid-air
+          // along the cursor ray), so we replaced it with a scene-hit
+          // dolly that has no asymptote.
+          enableZoom={false}
           onChange={onCameraChange}
         />
         <FocusDriver orbitRef={orbitRef} />
+        <WheelZoomDriver orbitRef={orbitRef} />
         <ZoomDebugProbe orbitRef={orbitRef} />
         <EditorRectPublisher />
         {/* Warm hemispheric fill — sky from above, slightly cooler floor
