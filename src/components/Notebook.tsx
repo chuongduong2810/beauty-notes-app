@@ -64,11 +64,12 @@ const PAGE_STACK_HEIGHT = 0.03;
 const BOOK_POSITION: [number, number, number] = [-0.45, 0.79, -2.15];
 
 /**
- * drei `<Html transform>` perspective-scale for the page content. The
- * page is ~0.2 m wide; with the fixed-px page DOM below this lands the
- * content roughly within the paper. Tunable by eye — lower = smaller.
+ * drei `<Html transform>` perspective-scale for the page content. Sized
+ * so the fixed-px page DOM (150 × 196) fills ~90% of each ~0.2 m page
+ * rather than floating small in the middle of it. Tunable by eye —
+ * lower = smaller content on the page.
  */
-const PAGE_HTML_DISTANCE = 0.14;
+const PAGE_HTML_DISTANCE = 0.3;
 
 /**
  * Open "reading pose" (issue #57 follow-up). Flat on the desk the open

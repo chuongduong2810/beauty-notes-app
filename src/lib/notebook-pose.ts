@@ -3,17 +3,17 @@
  *
  * The Notebook's front cover is hinged along the book's spine. Closed,
  * the cover lies flat on the page stack (rotation 0). Open, it swings
- * up and over past vertical so the inside face presents the left-hand
- * page — a little beyond 90° so the cover rests "fallen open" rather
- * than standing straight up.
+ * all the way over (180°) so it lies flat to the left of the spine like
+ * a fully-opened book — rather than standing up at an angle, which read
+ * as an awkward "wing" sticking up out of the desk.
  *
  * Kept renderer-free so the animation target is unit-testable without
  * an R3F canvas — the component feeds these values into a react-spring
  * `useSpring` (ADR-0007) for the actual motion.
  */
 
-/** Open angle of the front cover, in radians (~150° past flat). */
-export const NOTEBOOK_COVER_OPEN_RAD = (150 * Math.PI) / 180;
+/** Open angle of the front cover, in radians (180° — fully open, flat). */
+export const NOTEBOOK_COVER_OPEN_RAD = Math.PI;
 
 /** Cover angle when the book is shut: flat on the page stack. */
 export const NOTEBOOK_COVER_CLOSED_RAD = 0;
