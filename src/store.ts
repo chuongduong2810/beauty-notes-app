@@ -13,8 +13,10 @@ import {
   type Tool,
 } from "./lib/pen-tool";
 import { loadRoom } from "./lib/load-room";
+import { claimRedirectUrl } from "./lib/ownership";
 import type { ScreenRect } from "./lib/project-note-rect";
 import { roomPath } from "./lib/room-route";
+import { supabase } from "./lib/supabase";
 import {
   DEFAULT_NOTE_HEIGHT_CM,
   DEFAULT_NOTE_WIDTH_CM,
@@ -96,10 +98,27 @@ type CameraPose = {
   position: [number, number, number];
 };
 
+/**
+ * Lifecycle of "claiming a Room" — promoting the anonymous User to a
+ * permanent email account via a magic link (issue #70, ADR-0018):
+ *  - "idle": nothing in flight (initial).
+ *  - "sending": the `updateUser` call is awaiting Supabase.
+ *  - "sent": the magic link has been emailed; awaiting the User's click.
+ *  - "claimed": the magic link completed this session — now permanent.
+ *  - "error": the send failed; see `claimError`.
+ * The Notebook claim UI (issue #71) codes against these exact names.
+ */
+type ClaimStatus = "idle" | "sending" | "sent" | "claimed" | "error";
+
 type AppState = {
   session: Session | null;
   repo: CanvasRepository | null;
   ready: boolean;
+
+  /** Current stage of the Room-claim flow (issue #70). */
+  claimStatus: ClaimStatus;
+  /** Human-readable failure reason when `claimStatus === "error"`. */
+  claimError: string | null;
   /** True while a Room switch / create is in flight. Drives the
    *  small "Loading Room" overlay (#22). Distinct from `ready` so
    *  the full SplashScreen only shows during initial bootstrap. */
@@ -165,6 +184,18 @@ type AppState = {
 
   setSession: (session: Session | null) => void;
   setRepo: (repo: CanvasRepository) => void;
+  /**
+   * Claim the current Room by promoting the anonymous User to a
+   * permanent email account (issue #70, ADR-0018). Sends a magic link
+   * via `updateUser({ email })` — the UUID is preserved so there is NO
+   * data migration. Flips `claimStatus` "sending" → "sent" on success,
+   * or "error" (+ `claimError`) on failure. No-op outside the DOM or
+   * with no current Room.
+   */
+  claimRoom: (email: string) => Promise<void>;
+  /** Reset the claim flow back to "idle" and clear any error — used when
+   *  reopening the claim page (issue #70). */
+  resetClaim: () => void;
   setRoom: (
     room: Room,
     surfaces: Surface[],
@@ -218,6 +249,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   ready: false,
   switchingRoom: false,
 
+  claimStatus: "idle",
+  claimError: null,
+
   currentRoom: null,
   rooms: [],
   surfaces: [],
@@ -241,6 +275,34 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSession: (session) => set({ session }),
   setRepo: (repo) => set({ repo }),
+
+  claimRoom: async (email) => {
+    const { currentRoom } = get();
+    // Need a Room to return to (the magic-link redirect target) and a
+    // DOM `window.location.origin` to build it from.
+    if (!currentRoom || typeof window === "undefined") return;
+    set({ claimStatus: "sending", claimError: null });
+    try {
+      const { error } = await supabase.auth.updateUser(
+        { email },
+        {
+          emailRedirectTo: claimRedirectUrl(
+            currentRoom.id,
+            window.location.origin,
+          ),
+        },
+      );
+      if (error) throw error;
+      set({ claimStatus: "sent" });
+    } catch (err) {
+      set({
+        claimStatus: "error",
+        claimError: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+
+  resetClaim: () => set({ claimStatus: "idle", claimError: null }),
   setRoom: (room, surfaces, notes, annotations) =>
     set({
       currentRoom: room,
