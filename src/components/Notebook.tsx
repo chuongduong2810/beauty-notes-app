@@ -165,6 +165,7 @@ function NotebookSpread({
 
   const session = useAppStore((s) => s.session);
   const currentRoom = useAppStore((s) => s.currentRoom);
+  const setNotebookDragging = useAppStore((s) => s.setNotebookDragging);
   const claimStatus = useOwnershipStore((s) => s.claimStatus);
   const claimError = useOwnershipStore((s) => s.claimError);
   const claimRoom = useOwnershipStore((s) => s.claimRoom);
@@ -244,6 +245,7 @@ function NotebookSpread({
       d.dragging = true;
       didDragRef.current = true;
       e.currentTarget.setPointerCapture?.(e.pointerId);
+      setNotebookDragging(true); // lock the orbit camera for the turn
     }
     if (d.dragging) setDragX(dx);
   };
@@ -255,8 +257,13 @@ function NotebookSpread({
     d.pointerId = -1;
     d.dragging = false;
     setDragX(0);
+    if (wasDragging) setNotebookDragging(false);
     if (wasDragging && Math.abs(dx) > DRAG_TURN_PX) commitTurn(dx < 0 ? 1 : -1);
   };
+  // Safety: if the book closes mid-drag (this spread unmounts), make sure
+  // the orbit camera isn't left locked.
+  useEffect(() => () => setNotebookDragging(false), [setNotebookDragging]);
+
   const clamp = (x: number, lo: number, hi: number) =>
     Math.max(lo, Math.min(hi, x));
   const pageStyle = dragX
