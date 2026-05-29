@@ -15,6 +15,7 @@ import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { NoteEditor } from "./components/NoteEditor";
 import { RoomScene } from "./components/RoomScene";
 import { RoomFurniture } from "./components/RoomFurniture";
+import { Notebook } from "./components/Notebook";
 import { CityView } from "./components/CityView";
 import { SplashScreen } from "./components/SplashScreen";
 import { OrbitRadiusKeeper } from "./components/OrbitRadiusKeeper";
@@ -475,6 +476,11 @@ export function App() {
         {/* Lamp, desk, plant — small set of primitive-only props so
             the Room reads as a lived-in space. */}
         <RoomFurniture />
+        {/* Notebook resting on the desk — primitive-only set-dressing
+            (ADR-0016) that opens/closes with a react-spring animation
+            (#56). Page content is mounted by #57 onto the page anchors
+            it leaves on the open spread. */}
+        <Notebook />
         {/* Window on wall_west looking onto a foggy City skyline (#42).
             Set-dressing in front of the wall + a procedural skyline beyond
             the Room boundary; primitive geometry only. */}
