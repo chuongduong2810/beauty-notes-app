@@ -127,9 +127,12 @@ function NotebookSpread({
 
   return (
     <group position={[0, COVER_THICKNESS + PAGE_STACK_HEIGHT + 0.003, 0]}>
-      {/* Left page — section tabs. */}
+      {/* Left page — section tabs. `center` anchors the card by its
+          middle at the page centre (without it the DOM top-left lands on
+          the anchor and the card sits down-and-right of centre). */}
       <Html
         transform
+        center
         rotation={[-Math.PI / 2, 0, 0]}
         position={[-BOOK_WIDTH / 2, 0.001, 0]}
         distanceFactor={PAGE_HTML_DISTANCE}
@@ -165,6 +168,7 @@ function NotebookSpread({
           flip animation (CSS in index.html). */}
       <Html
         transform
+        center
         rotation={[-Math.PI / 2, 0, 0]}
         position={[BOOK_WIDTH / 2, 0.001, 0]}
         distanceFactor={PAGE_HTML_DISTANCE}
