@@ -39,7 +39,7 @@ export function SplashScreen() {
           <div className="splash__ring-arc" />
           <div className="splash__ring-dot" />
         </div>
-        <div className="splash__wordmark">BEAUTY NOTES</div>
+        <div className="splash__wordmark">SPATIAL CREATIVE WORKSPACE</div>
         <div className="splash__status">
           <span className="splash__status-prompt">&gt;</span>
           <span className="splash__status-text">Booting Room</span>
