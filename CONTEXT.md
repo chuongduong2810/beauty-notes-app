@@ -41,6 +41,10 @@ The fixed, curated set of ~6 hues a Note's background can be set to. Each entry 
 The person who owns Rooms and the Notes inside them. Rooms are private to their owner — no sharing or collaboration in v2. A User exists from the first app load via anonymous auth and can later be promoted to a signed-up account without losing data (see ADR-0003).
 _Avoid_: Account, member
 
+**Claim**:
+The act of an anonymous User promoting their session to a permanent, email-identified account — framed in the product as taking lasting ownership of the current Room. Claiming does **not** transfer or reassign ownership: the current (anonymous) User already owns the Room and all its Notes (ADR-0008). The Supabase auth UUID is preserved through an email magic-link promotion (`updateUser({ email })`), so ownership simply becomes durable and recoverable across devices, with **no data migration**. Initiated from the Notebook's ownership page; there is no login screen. (See ADR-0018, ADR-0003.)
+_Avoid_: Sign in, log in, register, sign up, create account, migrate, transfer
+
 **Attachment**:
 The visual element that suggests how a Note is held to its Surface — a strip of washi tape across the top edge, a metal push-pin in the upper-left, a decorative sticker corner, or nothing (clean Pin). Each Note has exactly one Attachment style chosen from a fixed palette. Some styles also drive the Note's cloth-solver pin constraints (e.g. tape = two anchors along the top edge; push-pin = single anchor at top centre; sticker = no anchoring effect, visual only). See ADR-0013.
 _Avoid_: Mount, fastener, sticker (one specific style), pin (overloaded with the verb)
