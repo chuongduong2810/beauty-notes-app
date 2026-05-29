@@ -54,9 +54,11 @@ const NEAR_GAP_M = 3;
 const SLAB_DEPTH_M = 26;
 /** Sky ceiling the rain falls from (m above the ground). */
 const SKY_TOP_M = 30;
-/** Fall speed range (m/s) — calm rain, gently varied per drop. */
-const MIN_SPEED = 6;
-const MAX_SPEED = 11;
+/** Fall speed range (m/s) — brisk rain, gently varied per drop. Viewed from
+ *  across the City slab the apparent motion reads much slower than the raw
+ *  m/s, so these run faster than real drizzle to feel like actual rainfall. */
+const MIN_SPEED = 18;
+const MAX_SPEED = 32;
 
 /**
  * The rain volume for a Room of the given width, derived so the slab sits
