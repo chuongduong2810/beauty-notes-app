@@ -1,11 +1,14 @@
 import { useMemo } from "react";
 import { RenderTexture, PerspectiveCamera } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
+import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from "three";
 import {
   DEFAULT_ROOM_WIDTH_M,
   DEFAULT_ROOM_DEPTH_M,
   DEFAULT_ROOM_HEIGHT_M,
 } from "../lib/room";
 import { buildingLayout, windowPlacement } from "../lib/city-layout";
+import { rainStreakLayout, scrollOffset } from "../lib/rain-streaks";
 import { CityRain } from "./CityRain";
 
 /**
@@ -68,6 +71,122 @@ const FRAME_COLOR = "#1a1620";
 const BUILDING_PALETTE = ["#23202e", "#2b2740", "#1d1b28", "#322c46", "#262236"];
 /** Warm "lit window" emissive so the dusk skyline glows a little. */
 const BUILDING_EMISSIVE = "#e8c98a";
+
+/** Seed for the deterministic on-glass rain-streak layout (issue #44). */
+const RAIN_STREAK_SEED = 0x9173;
+/** Texture resolution for the procedural streak alpha map. */
+const STREAK_TEX_SIZE = 512;
+
+/**
+ * Procedurally draw the on-glass rain-streak texture (issue #44, ADR-0015).
+ *
+ * Like `note-paper-texture.ts`, this builds a `<canvas>` (no image asset
+ * files) and returns a single shared `CanvasTexture`. The texture is a
+ * white-on-transparent set of soft vertical droplet trails laid out by the
+ * pure {@link rainStreakLayout}; it is used as a low-opacity overlay so the
+ * City stays clearly visible behind it. `RepeatWrapping` on the T axis lets
+ * the consumer scroll it downward seamlessly via `texture.offset`.
+ *
+ * Returns `null` in non-DOM environments (vitest, SSR), matching the
+ * codebase's nullable-texture convention.
+ */
+function createRainStreakTexture(): CanvasTexture | null {
+  if (typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = STREAK_TEX_SIZE;
+  canvas.height = STREAK_TEX_SIZE;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  // Fully transparent base — only the trails contribute, so the overlay
+  // material shows the City everywhere except along the thin streaks.
+  ctx.clearRect(0, 0, STREAK_TEX_SIZE, STREAK_TEX_SIZE);
+
+  for (const s of rainStreakLayout(RAIN_STREAK_SEED)) {
+    const x = s.x * STREAK_TEX_SIZE;
+    const lengthPx = s.length * STREAK_TEX_SIZE;
+    // Anchor each trail at a deterministic vertical position derived from
+    // its x, so streaks don't all start at the same row. (Scrolling the
+    // whole texture animates them together regardless of start.)
+    const startY = ((s.x * 1.37) % 1) * STREAK_TEX_SIZE;
+    const endY = startY + lengthPx;
+    const widthPx = Math.max(1, s.width * STREAK_TEX_SIZE);
+
+    // A vertical trail that fades from a brighter "head" droplet to a
+    // faint tail — reads as water sliding down the glass.
+    const grad = ctx.createLinearGradient(0, startY, 0, endY);
+    grad.addColorStop(0, `rgba(255, 255, 255, 0)`);
+    grad.addColorStop(0.15, `rgba(255, 255, 255, ${s.opacity})`);
+    grad.addColorStop(1, `rgba(255, 255, 255, 0)`);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = widthPx;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x, startY);
+    ctx.lineTo(x, endY);
+    ctx.stroke();
+
+    // Brighter rounded "head" droplet at the leading edge.
+    ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, s.opacity * 1.6)})`;
+    ctx.beginPath();
+    ctx.arc(x, startY, widthPx * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** Scroll speed of the whole streak texture (cycles per second) — slow. */
+const STREAK_SCROLL_SPEED = 0.04;
+
+/**
+ * Animated rain-streak overlay pane (issue #44).
+ *
+ * A transparent pane that sits just in front of the glass sheen within the
+ * Window opening. Its procedural streak texture scrolls downward each frame
+ * via {@link scrollOffset}, so the droplet trails appear to run down the
+ * glass. Kept deliberately subtle (low per-streak opacity, additive over
+ * the City) so the skyline stays clearly visible. `meshBasicMaterial` so the
+ * dim Room light never darkens it, and `NO_RAYCAST` so it never steals
+ * double-clicks / pen meant for `wall_west` (Notes still Pin over the glass).
+ */
+function RainStreakOverlay({
+  width,
+  height,
+  zOffset,
+}: {
+  width: number;
+  height: number;
+  zOffset: number;
+}) {
+  const texture = useMemo(() => createRainStreakTexture(), []);
+
+  useFrame((state) => {
+    if (!texture) return;
+    // Scroll the texture downward. offset.y increasing moves the sampled
+    // region up, so the trails read as moving down the pane.
+    texture.offset.y = scrollOffset(state.clock.elapsedTime, STREAK_SCROLL_SPEED);
+  });
+
+  if (!texture) return null;
+
+  return (
+    <mesh position={[0, 0, zOffset]} raycast={NO_RAYCAST}>
+      <planeGeometry args={[width, height]} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        opacity={0.85}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
 
 export function CityView() {
   const buildings = useMemo(() => buildingLayout(ROOM_W), []);
@@ -158,6 +277,9 @@ export function CityView() {
             metalness={0.1}
           />
         </mesh>
+
+        {/* On-glass rain streaks (issue #44), just in front of the sheen. */}
+        <RainStreakOverlay width={win.width} height={win.height} zOffset={0.05} />
 
         {/* Frame: four bars around the opening + a muntin cross. */}
         {([halfH, -halfH] as const).map((y) => (
