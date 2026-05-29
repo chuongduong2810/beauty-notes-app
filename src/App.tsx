@@ -335,6 +335,23 @@ export function App() {
     };
   }, [setSession, setRepo, setRoom, setRooms]);
 
+  // Magic-link claim return (issue #70, ADR-0018). `detectSessionInUrl`
+  // (Supabase default) restores the session from the link's hash, which
+  // fires an auth state change. When the User has just become permanent —
+  // they now have an `email` and are no longer anonymous on a
+  // USER_UPDATED / SIGNED_IN transition — adopt the new Session and flip
+  // `claimStatus` to "claimed". The UUID is unchanged so no data moves.
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event !== "USER_UPDATED" && event !== "SIGNED_IN") return;
+      const user = session?.user;
+      if (!user || !user.email || user.is_anonymous) return;
+      setSession(session);
+      useAppStore.setState({ claimStatus: "claimed" });
+    });
+    return () => data.subscription.unsubscribe();
+  }, [setSession]);
+
   // Back / forward navigation: pull the Room id from the new URL and
   // hand off to switchRoom. switchRoom no-ops if the id matches the
   // current Room, so this is safe for any popstate.
