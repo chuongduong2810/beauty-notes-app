@@ -72,3 +72,7 @@ _Avoid_: Climate, forecast, conditions
 **Notebook**:
 A physical organizer resting on the desk — fixed set-dressing like the Window and lamp (ADR-0015), not a Surface and not persisted. Clicking it opens a paper book whose pages are an *index into the Room's existing Notes*: Recently Created, Recently Edited, and Bookmarked. The Notebook holds **no content of its own** — selecting an entry navigates the Camera to that Note's real location on its Surface (a Focus transition) and highlights it. It is a browsing affordance, never a container; the Notes it lists live Pinned to Surfaces exactly as before. Scoped to the current Room. (See ADR-0016.)
 _Avoid_: Journal, book, binder, diary, index (the data structure), panel, menu
+
+**Search**:
+A chrome utility that finds Notes by the text of their body and flies the Camera to the chosen one. Search is scoped to the **current Room** (the workspace is one Room — ADR-0008) and matches against the Note **body** only; the first non-empty line of the body is shown as the Note's title, since a Note has no separate title field. There are no Tags in v2, so "search by tag" is not offered. Choosing a result runs a Focus transition (the same cinematic fly-and-highlight used by a Note click and the Notebook), never an instant jump, and the result surfaces which Surface the Note is on so the User keeps spatial awareness. (See ADR-0017.)
+_Avoid_: Filter, query, find (ambiguous), tag search, lookup
