@@ -1,6 +1,10 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { BufferGeometry, Float32BufferAttribute, type Points } from "three";
+import {
+  BufferGeometry,
+  Float32BufferAttribute,
+  type LineSegments,
+} from "three";
 import {
   createRainField,
   stepRaindrop,
@@ -31,29 +35,46 @@ const DROP_COUNT = 2200;
 const RAIN_SEED = 0x7a1f04;
 
 /** Drop tint — a cool, dim grey-blue that catches the dusk sky light. */
-const RAIN_COLOR = "#aab6cc";
+const RAIN_COLOR = "#c4cee0";
+
+/** Vertical length of each drop's motion-blur streak (metres). Drops read as
+ *  short falling lines, not floating dots — far more legible as rain. */
+const STREAK_LEN_M = 0.9;
 
 export function CityRain({ roomWidthM }: { roomWidthM: number }) {
   const bounds = useMemo(() => RAIN_BOUNDS(roomWidthM), [roomWidthM]);
 
-  // Build the initial field + its GPU geometry once. `positions` is the
-  // live buffer we mutate each frame; `speeds` stays constant per drop.
-  const { geometry, positions, speeds, count } = useMemo(() => {
+  // Build the initial field once. `heads` is the live drop-position buffer we
+  // step each frame; `verts` is the GPU line buffer (2 vertices per drop: the
+  // falling head at the bottom and a tail STREAK_LEN_M above it). `speeds`
+  // stays constant per drop.
+  const { geometry, heads, verts, speeds, count } = useMemo(() => {
     const field = createRainField(DROP_COUNT, bounds, RAIN_SEED);
+    const lineVerts = new Float32Array(field.count * 6);
+    for (let i = 0; i < field.count; i++) {
+      const x = field.positions[i * 3];
+      const y = field.positions[i * 3 + 1];
+      const z = field.positions[i * 3 + 2];
+      const k = i * 6;
+      lineVerts[k] = x; // head (bottom)
+      lineVerts[k + 1] = y;
+      lineVerts[k + 2] = z;
+      lineVerts[k + 3] = x; // tail (top), trailing the fall
+      lineVerts[k + 4] = y + STREAK_LEN_M;
+      lineVerts[k + 5] = z;
+    }
     const geom = new BufferGeometry();
-    geom.setAttribute(
-      "position",
-      new Float32BufferAttribute(field.positions, 3),
-    );
+    geom.setAttribute("position", new Float32BufferAttribute(lineVerts, 3));
     return {
       geometry: geom,
-      positions: field.positions,
+      heads: field.positions,
+      verts: lineVerts,
       speeds: field.speeds,
       count: field.count,
     };
   }, [bounds]);
 
-  const pointsRef = useRef<Points>(null);
+  const linesRef = useRef<LineSegments>(null);
   const elapsed = useRef(0);
 
   useFrame((_, delta) => {
@@ -63,36 +84,41 @@ export function CityRain({ roomWidthM }: { roomWidthM: number }) {
     for (let i = 0; i < count; i++) {
       const j = i * 3;
       const next = stepRaindrop(
-        positions[j],
-        positions[j + 1],
-        positions[j + 2],
+        heads[j],
+        heads[j + 1],
+        heads[j + 2],
         speeds[i],
         dt,
         bounds,
       );
-      positions[j] = next.x;
-      positions[j + 1] = next.y;
-      positions[j + 2] = next.z;
+      heads[j] = next.x;
+      heads[j + 1] = next.y;
+      heads[j + 2] = next.z;
+      const k = i * 6;
+      verts[k] = next.x;
+      verts[k + 1] = next.y;
+      verts[k + 2] = next.z;
+      verts[k + 3] = next.x;
+      verts[k + 4] = next.y + STREAK_LEN_M;
+      verts[k + 5] = next.z;
     }
     geometry.attributes.position.needsUpdate = true;
 
     // Subtle, continuous breathing of intensity — pure life, no controls.
-    const mat = pointsRef.current?.material;
+    const mat = linesRef.current?.material;
     if (mat && !Array.isArray(mat) && "opacity" in mat) {
-      mat.opacity = 0.5 + 0.12 * Math.sin(elapsed.current * 1.3);
+      mat.opacity = 0.55 + 0.1 * Math.sin(elapsed.current * 1.3);
     }
   });
 
   return (
-    <points ref={pointsRef} geometry={geometry} frustumCulled={false}>
-      <pointsMaterial
+    <lineSegments ref={linesRef} geometry={geometry} frustumCulled={false}>
+      <lineBasicMaterial
         color={RAIN_COLOR}
-        size={0.06}
-        sizeAttenuation
         transparent
-        opacity={0.5}
+        opacity={0.55}
         depthWrite={false}
       />
-    </points>
+    </lineSegments>
   );
 }

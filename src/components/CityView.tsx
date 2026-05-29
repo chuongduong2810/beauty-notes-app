@@ -74,8 +74,9 @@ const BUILDING_EMISSIVE = "#e8c98a";
 
 /** Seed for the deterministic on-glass rain-streak layout (issue #44). */
 const RAIN_STREAK_SEED = 0x9173;
-/** Texture resolution for the procedural streak alpha map. */
-const STREAK_TEX_SIZE = 512;
+/** Texture resolution for the procedural streak alpha map. Higher = crisper
+ *  thin trails (low-res blurred the streaks into splotches). */
+const STREAK_TEX_SIZE = 1024;
 
 /**
  * Procedurally draw the on-glass rain-streak texture (issue #44, ADR-0015).
@@ -112,11 +113,13 @@ function createRainStreakTexture(): CanvasTexture | null {
     const endY = startY + lengthPx;
     const widthPx = Math.max(1, s.width * STREAK_TEX_SIZE);
 
-    // A vertical trail that fades from a brighter "head" droplet to a
-    // faint tail — reads as water sliding down the glass.
+    // A thin vertical trail that fades in from the top and out at the
+    // bottom — reads as water sliding down the glass. No fat "head" droplet:
+    // at low texture resolution those bloomed into the big splotches we saw.
     const grad = ctx.createLinearGradient(0, startY, 0, endY);
     grad.addColorStop(0, `rgba(255, 255, 255, 0)`);
-    grad.addColorStop(0.15, `rgba(255, 255, 255, ${s.opacity})`);
+    grad.addColorStop(0.3, `rgba(255, 255, 255, ${s.opacity})`);
+    grad.addColorStop(0.85, `rgba(255, 255, 255, ${s.opacity})`);
     grad.addColorStop(1, `rgba(255, 255, 255, 0)`);
     ctx.strokeStyle = grad;
     ctx.lineWidth = widthPx;
@@ -125,12 +128,6 @@ function createRainStreakTexture(): CanvasTexture | null {
     ctx.moveTo(x, startY);
     ctx.lineTo(x, endY);
     ctx.stroke();
-
-    // Brighter rounded "head" droplet at the leading edge.
-    ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, s.opacity * 1.6)})`;
-    ctx.beginPath();
-    ctx.arc(x, startY, widthPx * 0.9, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   const texture = new CanvasTexture(canvas);
@@ -181,7 +178,7 @@ function RainStreakOverlay({
       <meshBasicMaterial
         map={texture}
         transparent
-        opacity={0.85}
+        opacity={0.4}
         depthWrite={false}
       />
     </mesh>
