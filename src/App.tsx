@@ -15,8 +15,8 @@ import { NoteEditor } from "./components/NoteEditor";
 import { RoomScene } from "./components/RoomScene";
 import { RoomFurniture } from "./components/RoomFurniture";
 import { SplashScreen } from "./components/SplashScreen";
+import { OrbitRadiusKeeper } from "./components/OrbitRadiusKeeper";
 import { ToolPalette } from "./components/ToolPalette";
-import { WheelZoomDriver } from "./components/WheelZoomDriver";
 import { ZoomDebugOverlay, ZoomDebugProbe } from "./components/ZoomDebug";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
@@ -380,16 +380,20 @@ export function App() {
           minPolarAngle={ORBIT_MIN_POLAR_ANGLE}
           maxPolarAngle={ORBIT_MAX_POLAR_ANGLE}
           rotateSpeed={0.7}
-          // Native wheel zoom is disabled — see <WheelZoomDriver>. The
-          // three-stdlib zoomToCursor + screenSpacePanning combo caps
-          // total dolly at initialRadius (camera asymptotes in mid-air
-          // along the cursor ray), so we replaced it with a scene-hit
-          // dolly that has no asymptote.
-          enableZoom={false}
+          zoomSpeed={5.0}
+          // Wheel-zoom toward the cursor + screen-space target update.
+          // On their own these would asymptote (total dolly capped at
+          // initialRadius — see OrbitRadiusKeeper comment for the
+          // full math). OrbitRadiusKeeper pushes the orbit target
+          // back to a minimum distance after each frame so the next
+          // wheel tick has a healthy `prevRadius` to dolly off and
+          // the cap never bites.
+          zoomToCursor
+          screenSpacePanning
           onChange={onCameraChange}
         />
         <FocusDriver orbitRef={orbitRef} />
-        <WheelZoomDriver orbitRef={orbitRef} />
+        <OrbitRadiusKeeper orbitRef={orbitRef} />
         <ZoomDebugProbe orbitRef={orbitRef} />
         <EditorRectPublisher />
         {/* Warm hemispheric fill — sky from above, slightly cooler floor
