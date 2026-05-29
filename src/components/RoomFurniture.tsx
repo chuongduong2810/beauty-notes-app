@@ -1,4 +1,8 @@
+import { useState } from "react";
 import { DoubleSide } from "three";
+import { useAppStore } from "../store";
+import { HoverTooltip } from "./HoverTooltip";
+import { PenProp } from "./PenProp";
 
 /**
  * A small set of room-dressing objects to make the Room read as a
@@ -24,6 +28,14 @@ const LEAF_B = "#4a6f4a";
 const LEAF_C = "#2a4f2a";
 
 export function RoomFurniture() {
+  const currentTool = useAppStore((s) => s.penState.currentTool);
+  const setCurrentTool = useAppStore((s) => s.setCurrentTool);
+  // The desk's top face sits at y=0.77 in world coords (group y=0 +
+  // top-mesh y=0.75 + top thickness 0.02). Pen lies along world +X
+  // a few cm off-centre so it doesn't sit on top of nothing.
+  const penOnDesk = currentTool !== "pen";
+  const [penHovered, setPenHovered] = useState(false);
+
   return (
     <group>
       {/* Floor lamp — back-left corner (north-west). */}
@@ -57,6 +69,49 @@ export function RoomFurniture() {
           decay={1.6}
         />
       </group>
+
+      {/* Pen resting on the desk (issue #35 follow-up). Click to pick
+          it up and enter Pen mode. Hidden while in Pen mode — the user
+          is holding the pen. The PenProp's local +Y is along the pen
+          body; we lay it on its side by rotating about world +Z so the
+          body lines up along world +X (along the front edge of the
+          desk). The group offsets the pen so its TIP sits on the desk
+          surface, body lying flat across the wood. */}
+      {penOnDesk && (
+        <group position={[0.55, 0.772, -2.05]}>
+          {/* The pen itself, rotated to lie on its side along the
+              desk. The hover handlers wrap the rotated child so they
+              fire on any of the pen's three primitive meshes. */}
+          <group
+            rotation={[0, 0, -Math.PI / 2]}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              setPenHovered(true);
+              document.body.style.cursor = "pointer";
+            }}
+            onPointerOut={() => {
+              setPenHovered(false);
+              document.body.style.cursor = "";
+            }}
+          >
+            <PenProp
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                setCurrentTool("pen");
+                document.body.style.cursor = "";
+              }}
+            />
+          </group>
+          {/* Futuristic toast — appears above the pen on hover.
+              Positioned in the un-rotated parent frame so +Y is up. */}
+          <HoverTooltip
+            visible={penHovered}
+            title="Pencil"
+            subtitle="Click to start drawing"
+            position={[0, 0.08, 0]}
+          />
+        </group>
+      )}
 
       {/* Desk — centred against the north wall. */}
       <group position={[0, 0, -2.5]}>

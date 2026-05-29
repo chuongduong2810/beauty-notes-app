@@ -14,6 +14,9 @@ import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { NoteEditor } from "./components/NoteEditor";
 import { RoomScene } from "./components/RoomScene";
 import { RoomFurniture } from "./components/RoomFurniture";
+import { SplashScreen } from "./components/SplashScreen";
+import { OrbitRadiusKeeper } from "./components/OrbitRadiusKeeper";
+import { ToolPalette } from "./components/ToolPalette";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
@@ -25,8 +28,11 @@ import { useAppStore } from "./store";
 const ROOM_BACKDROP = "#0e0b16";
 
 const ORBIT_TARGET: [number, number, number] = [0, 1.5, 0];
-const ORBIT_MIN_DISTANCE = 0.4;
-const ORBIT_MAX_DISTANCE = 20;
+/** Free zoom: only clamp at a tiny epsilon so the orbit math doesn't
+ *  divide by zero when the camera reaches the orbit target. Beyond
+ *  that the user can dolly in and out as far as they like. */
+const ORBIT_MIN_DISTANCE = 0.001;
+const ORBIT_MAX_DISTANCE = Infinity;
 const ORBIT_MIN_POLAR_ANGLE = 0.17;
 const ORBIT_MAX_POLAR_ANGLE = Math.PI - 0.17;
 
@@ -205,14 +211,30 @@ export function App() {
     };
   }, [cameraSaver]);
 
+  // Set the initial orbit target ONCE on mount via the ref. We
+  // deliberately do NOT pass `target={ORBIT_TARGET}` as a JSX prop on
+  // <OrbitControls> — R3F's reconciler re-applies Vector3-typed props
+  // on every render by calling `.set(...)` in-place. That wiped out
+  // zoomToCursor + screenSpacePanning's per-tick target migration
+  // and pinned the target permanently at room centre, so wheel-zoom
+  // could only collapse the camera onto the centre instead of
+  // dollying toward a wall. Setting it once here lets OrbitControls
+  // own the target from then on.
+  useEffect(() => {
+    const c = orbitRef.current;
+    if (!c) return;
+    c.target.set(ORBIT_TARGET[0], ORBIT_TARGET[1], ORBIT_TARGET[2]);
+    c.update();
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     bootstrapSessionAndRoom()
-      .then(({ session, room, surfaces, notes }) => {
+      .then(({ session, room, surfaces, notes, annotations }) => {
         if (cancelled) return;
         setSession(session);
         setRepo(supabaseCanvasRepository(supabase));
-        setRoom(room, surfaces, notes);
+        setRoom(room, surfaces, notes, annotations);
       })
       .catch((err) => console.error("Bootstrap failed:", err));
     return () => {
@@ -220,8 +242,14 @@ export function App() {
     };
   }, [setSession, setRepo, setRoom]);
 
-  // Restore the persisted orbit pose once the Room is loaded — only
-  // while not focused, so we don't fight FocusDriver.
+  // Restore the persisted orbit pose ONCE per Room load. Previously
+  // this effect also depended on focusedNoteId + the camera_* fields,
+  // which meant: every Escape from focus mode would re-fire it and
+  // snap the camera to the persisted pose, overriding FocusDriver's
+  // lerp-back to `beforeFocus`. Bug: the camera "zoomed out" but lost
+  // the user's yaw/pitch on exit. Depending on room.id alone keeps
+  // initial-load behaviour and lets FocusDriver own the unfocus
+  // transition cleanly.
   useEffect(() => {
     if (!ready || !room || !orbitRef.current || focusedNoteId) return;
     const controls = orbitRef.current;
@@ -233,14 +261,33 @@ export function App() {
     const offset = new Vector3().setFromSpherical(sph);
     controls.object.position.copy(controls.target).add(offset);
     controls.update();
-  }, [
-    ready,
-    room?.id,
-    room?.camera_yaw,
-    room?.camera_pitch,
-    room?.camera_distance,
-    focusedNoteId,
-  ]);
+    // Deliberately omitting focusedNoteId / camera_* from deps — see
+    // comment above. eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, room?.id]);
+
+  // Lock the orbit camera while a Pen Stroke is actively being drawn
+  // (#35 follow-up): the user is committing to a continuous gesture on
+  // a wall, so a stray drag-orbit mid-stroke would corrupt the polyline.
+  //
+  // CRITICAL: FocusDriver owns `controls.enabled` both during focus
+  // entry AND during the lerp-back to `beforeFocus` on exit. If this
+  // effect re-enables orbit the moment `focusedNoteId` clears, the
+  // unfocus animation is abandoned mid-flight (FocusDriver's useFrame
+  // gates on `!c.enabled`). So we ALSO bail out while `beforeFocus`
+  // is still set — that's the "animating back to user's pre-focus
+  // pose" window. Only once FocusDriver clears beforeFocus do we
+  // resume applying the stroke-lock logic.
+  const drawingStroke = useAppStore(
+    (s) => s.penState.inProgressStroke !== null,
+  );
+  const inPenMode = useAppStore((s) => s.penState.currentTool === "pen");
+  const beforeFocus = useAppStore((s) => s.beforeFocus);
+  useEffect(() => {
+    const c = orbitRef.current;
+    if (!c) return;
+    if (focusedNoteId || beforeFocus) return;
+    c.enabled = !drawingStroke;
+  }, [drawingStroke, focusedNoteId, beforeFocus]);
 
   // Escape exits focus.
   useEffect(() => {
@@ -294,10 +341,21 @@ export function App() {
   );
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: ROOM_BACKDROP }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: ROOM_BACKDROP,
+        // Hide the system cursor whenever the pen is "in hand" — i.e.
+        // the user is in Pen mode, whether actively drawing or just
+        // hovering. The 3D pen mesh substitutes as the cursor on the
+        // wall (#35).
+        cursor: inPenMode ? "none" : undefined,
+      }}
+    >
       <Canvas
         shadows={{ type: PCFSoftShadowMap }}
-        camera={{ position: [0, 1.6, 1.8], fov: 60, near: 0.05, far: 50 }}
+        camera={{ position: [0, 1.6, 1.8], fov: 60, near: 0.002, far: 50 }}
         gl={{
           toneMapping: ACESFilmicToneMapping,
           toneMappingExposure: 1.05,
@@ -309,7 +367,10 @@ export function App() {
       >
         <OrbitControls
           ref={orbitRef}
-          target={ORBIT_TARGET}
+          // NOTE: `target` is deliberately NOT a prop here — see the
+          // imperative-set useEffect above. Passing it as a JSX prop
+          // makes R3F call target.set(...) on every render, wiping
+          // out zoomToCursor's target migration each frame.
           enableDamping
           dampingFactor={0.05}
           enablePan={false}
@@ -318,10 +379,20 @@ export function App() {
           minPolarAngle={ORBIT_MIN_POLAR_ANGLE}
           maxPolarAngle={ORBIT_MAX_POLAR_ANGLE}
           rotateSpeed={0.7}
-          zoomSpeed={0.8}
+          zoomSpeed={5.0}
+          // Wheel-zoom toward the cursor + screen-space target update.
+          // On their own these would asymptote (total dolly capped at
+          // initialRadius — see OrbitRadiusKeeper comment for the
+          // full math). OrbitRadiusKeeper pushes the orbit target
+          // back to a minimum distance after each frame so the next
+          // wheel tick has a healthy `prevRadius` to dolly off and
+          // the cap never bites.
+          zoomToCursor
+          screenSpacePanning
           onChange={onCameraChange}
         />
         <FocusDriver orbitRef={orbitRef} />
+        <OrbitRadiusKeeper orbitRef={orbitRef} />
         <EditorRectPublisher />
         {/* Warm hemispheric fill — sky from above, slightly cooler floor
             bounce. Low intensity for a calm tone. */}
@@ -348,6 +419,8 @@ export function App() {
         <Atmosphere />
       </Canvas>
       <NoteEditor />
+      <ToolPalette />
+      <SplashScreen />
     </div>
   );
 }

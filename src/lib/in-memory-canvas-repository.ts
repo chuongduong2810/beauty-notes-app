@@ -12,6 +12,11 @@ import {
   type Note,
   type NewNote,
 } from "./room";
+import type { Annotation, NewStroke, Stroke } from "./stroke";
+
+/** Annotation row without its `strokes` array — strokes live in their
+ *  own collection in the in-memory store, matching the SQL shape. */
+type AnnotationRow = Omit<Annotation, "strokes">;
 
 /**
  * Test double for `CanvasRepository`. Mirrors the surface the Supabase
@@ -22,8 +27,11 @@ export class InMemoryCanvasRepository implements CanvasRepository {
   rooms: Room[] = [];
   surfaces: Surface[] = [];
   notes: Note[] = [];
+  annotations: AnnotationRow[] = [];
+  strokes: Stroke[] = [];
   insertRoomCalls = 0;
   insertNoteCalls = 0;
+  insertStrokeCalls = 0;
 
   async insertRoom(owner_id: string, name: string): Promise<Room> {
     this.insertRoomCalls++;
@@ -117,6 +125,64 @@ export class InMemoryCanvasRepository implements CanvasRepository {
     if (this.notes.length === before) {
       throw new Error(`deleteNote: no Note with id ${id}`);
     }
+  }
+
+  async insertAnnotation(input: {
+    surface_id: string;
+    owner_id: string;
+  }): Promise<Annotation> {
+    const now = new Date().toISOString();
+    const row: AnnotationRow = {
+      id: `annotation-${this.annotations.length + 1}`,
+      surface_id: input.surface_id,
+      owner_id: input.owner_id,
+      created_at: now,
+      updated_at: now,
+    };
+    this.annotations.push(row);
+    return { ...row, strokes: [] };
+  }
+
+  async insertStroke(
+    annotationId: string,
+    stroke: NewStroke,
+  ): Promise<Stroke> {
+    this.insertStrokeCalls++;
+    const ann = this.annotations.find((a) => a.id === annotationId);
+    if (!ann) throw new Error(`insertStroke: no Annotation ${annotationId}`);
+    const row: Stroke = {
+      id: `stroke-${this.strokes.length + 1}`,
+      annotation_id: annotationId,
+      points: stroke.points,
+      color_id: stroke.color_id,
+      width_id: stroke.width_id,
+      index: stroke.index,
+      created_at: new Date().toISOString(),
+    };
+    this.strokes.push(row);
+    return row;
+  }
+
+  async deleteStroke(id: string): Promise<void> {
+    const before = this.strokes.length;
+    this.strokes = this.strokes.filter((s) => s.id !== id);
+    if (this.strokes.length === before) {
+      throw new Error(`deleteStroke: no Stroke with id ${id}`);
+    }
+  }
+
+  async listAnnotations(roomId: string): Promise<Annotation[]> {
+    const surfaceIds = new Set(
+      this.surfaces.filter((s) => s.room_id === roomId).map((s) => s.id),
+    );
+    return this.annotations
+      .filter((a) => surfaceIds.has(a.surface_id))
+      .map((a) => ({
+        ...a,
+        strokes: this.strokes
+          .filter((s) => s.annotation_id === a.id)
+          .sort((x, y) => x.index - y.index),
+      }));
   }
 
   async updateRoomCamera(

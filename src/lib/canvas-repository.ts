@@ -10,6 +10,7 @@
  */
 
 import type { Room, Surface, Note, NewNote } from "./room";
+import type { Annotation, NewStroke, Stroke } from "./stroke";
 
 export interface CanvasRepository {
   /** Insert a Room and seed its six Surfaces. */
@@ -40,4 +41,20 @@ export interface CanvasRepository {
   updateNoteBody(id: string, body: string): Promise<Note>;
   /** Permanently remove a Note. Called when the user drops it on the trash. */
   deleteNote(id: string): Promise<void>;
+
+  /**
+   * List every Annotation on any Surface of the Room, with its Strokes
+   * pre-sorted by `index` ascending so the renderer draws older Strokes
+   * first (ADR-0014, issue #35).
+   */
+  listAnnotations(roomId: string): Promise<Annotation[]>;
+  /** Create an empty Annotation owned by `owner_id` on a Surface. */
+  insertAnnotation(input: {
+    surface_id: string;
+    owner_id: string;
+  }): Promise<Annotation>;
+  /** Append a Stroke to an Annotation. */
+  insertStroke(annotationId: string, stroke: NewStroke): Promise<Stroke>;
+  /** Remove a single Stroke (used by the Eraser tool). */
+  deleteStroke(id: string): Promise<void>;
 }

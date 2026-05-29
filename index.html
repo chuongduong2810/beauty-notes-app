@@ -41,6 +41,469 @@
         background: rgba(42, 35, 48, 0.6);
         background-clip: content-box;
       }
+
+      /* Futuristic 3D hover toast for interactive 3D props (issue
+         #35 follow-up). Glass background, cyan neon border, HUD
+         corner brackets, scanline shimmer, blinking terminal cursor,
+         floating bob, pulsing glow. Rendered inside a drei
+         <Html transform sprite> so the card billboards in 3D space
+         and scales with camera distance. */
+      .hover-toast {
+        position: relative;
+        font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+        padding: 14px 22px;
+        min-width: 220px;
+        background:
+          linear-gradient(
+            180deg,
+            rgba(15, 22, 42, 0.85) 0%,
+            rgba(10, 12, 22, 0.85) 100%
+          );
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(92, 242, 232, 0.55);
+        border-radius: 4px;
+        color: #d8fffb;
+        text-align: center;
+        box-shadow:
+          0 0 24px rgba(92, 242, 232, 0.32),
+          inset 0 0 18px rgba(92, 242, 232, 0.1),
+          0 6px 32px rgba(0, 0, 0, 0.55);
+        pointer-events: none;
+        user-select: none;
+        white-space: nowrap;
+        transform-origin: 50% 100%;
+        overflow: hidden;
+        /* Continuous + entrance animation. The float and glow loop
+           forever; the enter runs once. */
+        animation:
+          hover-toast-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both,
+          hover-toast-float 3.6s ease-in-out 320ms infinite,
+          hover-toast-pulse 2.4s ease-in-out 320ms infinite;
+      }
+      .hover-toast::before {
+        /* Top gradient hairline — the HUD's "live channel" indicator. */
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          #5cf2e8 30%,
+          #c46cff 50%,
+          #5cf2e8 70%,
+          transparent 100%
+        );
+        background-size: 200% 100%;
+        animation: hover-toast-sweep 2.6s linear infinite;
+      }
+      .hover-toast::after {
+        /* Downward triangle pointer toward the anchored object. */
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: -7px;
+        width: 12px;
+        height: 12px;
+        transform: translateX(-50%) rotate(45deg);
+        background: rgba(10, 12, 22, 0.85);
+        border-right: 1px solid rgba(92, 242, 232, 0.55);
+        border-bottom: 1px solid rgba(92, 242, 232, 0.55);
+        box-shadow: 2px 2px 12px rgba(92, 242, 232, 0.28);
+      }
+      /* Four HUD-style corner brackets — short cyan strokes that
+         outline the toast's corners without filling the whole edge. */
+      .hover-toast__bracket {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-color: #5cf2e8;
+        box-shadow: 0 0 6px rgba(92, 242, 232, 0.6);
+        pointer-events: none;
+      }
+      .hover-toast__bracket--tl {
+        top: -2px;
+        left: -2px;
+        border-top: 1.5px solid;
+        border-left: 1.5px solid;
+      }
+      .hover-toast__bracket--tr {
+        top: -2px;
+        right: -2px;
+        border-top: 1.5px solid;
+        border-right: 1.5px solid;
+      }
+      .hover-toast__bracket--bl {
+        bottom: -2px;
+        left: -2px;
+        border-bottom: 1.5px solid;
+        border-left: 1.5px solid;
+      }
+      .hover-toast__bracket--br {
+        bottom: -2px;
+        right: -2px;
+        border-bottom: 1.5px solid;
+        border-right: 1.5px solid;
+      }
+      /* Scanline overlay — fine repeating horizontal lines drifting
+         downward for a CRT-HUD vibe. */
+      .hover-toast__scan {
+        position: absolute;
+        inset: 0;
+        background-image: repeating-linear-gradient(
+          0deg,
+          rgba(92, 242, 232, 0.06) 0px,
+          rgba(92, 242, 232, 0.06) 1px,
+          transparent 1px,
+          transparent 3px
+        );
+        animation: hover-toast-scan 2.8s linear infinite;
+        pointer-events: none;
+        opacity: 0.7;
+      }
+      .hover-toast__title {
+        position: relative;
+        font-size: 13px;
+        letter-spacing: 0.24em;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #5cf2e8;
+        text-shadow:
+          0 0 8px rgba(92, 242, 232, 0.7),
+          0 0 16px rgba(92, 242, 232, 0.35);
+      }
+      .hover-toast__subtitle {
+        position: relative;
+        margin-top: 4px;
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        color: rgba(216, 255, 251, 0.85);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .hover-toast__subtitle-text {
+        /* Type-on effect: width animates from 0 to full so the chars
+           appear left-to-right. Combined with overflow:hidden on the
+           parent and white-space:nowrap, this reads as a HUD typing it
+           out. */
+        display: inline-block;
+        overflow: hidden;
+        white-space: nowrap;
+        animation: hover-toast-type 0.65s steps(28) 280ms both;
+      }
+      .hover-toast__caret {
+        display: inline-block;
+        width: 6px;
+        height: 11px;
+        background: #5cf2e8;
+        box-shadow: 0 0 6px rgba(92, 242, 232, 0.85);
+        animation: hover-toast-blink 0.9s steps(2) infinite;
+      }
+      @keyframes hover-toast-enter {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.85) rotateX(-25deg);
+          filter: blur(3px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1) rotateX(0deg);
+          filter: blur(0);
+        }
+      }
+      @keyframes hover-toast-float {
+        0%, 100% {
+          transform: translateY(0) scale(1) rotateX(0deg);
+        }
+        50% {
+          transform: translateY(-4px) scale(1) rotateX(0deg);
+        }
+      }
+      @keyframes hover-toast-pulse {
+        0%, 100% {
+          box-shadow:
+            0 0 24px rgba(92, 242, 232, 0.32),
+            inset 0 0 18px rgba(92, 242, 232, 0.1),
+            0 6px 32px rgba(0, 0, 0, 0.55);
+        }
+        50% {
+          box-shadow:
+            0 0 36px rgba(92, 242, 232, 0.55),
+            inset 0 0 24px rgba(92, 242, 232, 0.18),
+            0 6px 32px rgba(0, 0, 0, 0.55);
+        }
+      }
+      @keyframes hover-toast-sweep {
+        0% {
+          background-position: -100% 0;
+        }
+        100% {
+          background-position: 200% 0;
+        }
+      }
+      @keyframes hover-toast-scan {
+        0% {
+          background-position: 0 0;
+        }
+        100% {
+          background-position: 0 12px;
+        }
+      }
+      @keyframes hover-toast-type {
+        from {
+          width: 0;
+        }
+        to {
+          width: 100%;
+        }
+      }
+      @keyframes hover-toast-blink {
+        0%, 50% {
+          opacity: 1;
+        }
+        50.01%, 100% {
+          opacity: 0;
+        }
+      }
+
+      /* Animated futuristic splash shown while the Room bootstraps.
+         Full-screen DOM overlay over the canvas; fades out once the
+         store flips ready=true. Same neon-cyan vocabulary as the
+         hover-toast so the HUD vibe is consistent. */
+      .splash {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background:
+          radial-gradient(
+            ellipse at center,
+            rgba(20, 26, 48, 1) 0%,
+            rgba(14, 11, 22, 1) 70%
+          );
+        font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+        color: #d8fffb;
+        user-select: none;
+        opacity: 1;
+        transition:
+          opacity 600ms cubic-bezier(0.4, 0, 0.2, 1),
+          backdrop-filter 600ms ease;
+      }
+      .splash--hiding {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .splash__scan {
+        position: absolute;
+        inset: 0;
+        background-image: repeating-linear-gradient(
+          0deg,
+          rgba(92, 242, 232, 0.05) 0px,
+          rgba(92, 242, 232, 0.05) 1px,
+          transparent 1px,
+          transparent 3px
+        );
+        animation: splash-scan 4s linear infinite;
+        pointer-events: none;
+      }
+      .splash__content {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+        animation: splash-enter 480ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .splash__ring {
+        position: relative;
+        width: 88px;
+        height: 88px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(92, 242, 232, 0.18);
+        box-shadow:
+          0 0 24px rgba(92, 242, 232, 0.18),
+          inset 0 0 14px rgba(92, 242, 232, 0.08);
+      }
+      .splash__ring-arc {
+        position: absolute;
+        inset: -1.5px;
+        border-radius: 50%;
+        /* Conic gradient: cyan arc, the rest transparent. Mask makes
+           the conic only paint a stroke instead of a filled disc. */
+        background: conic-gradient(
+          from 0deg,
+          transparent 0deg,
+          transparent 270deg,
+          #5cf2e8 360deg
+        );
+        -webkit-mask: radial-gradient(
+          circle,
+          transparent 38px,
+          black 39.5px,
+          black 44px,
+          transparent 45.5px
+        );
+        mask: radial-gradient(
+          circle,
+          transparent 38px,
+          black 39.5px,
+          black 44px,
+          transparent 45.5px
+        );
+        filter: drop-shadow(0 0 6px rgba(92, 242, 232, 0.75));
+        animation: splash-spin 1.2s linear infinite;
+      }
+      .splash__ring-dot {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #5cf2e8;
+        box-shadow:
+          0 0 12px rgba(92, 242, 232, 0.85),
+          0 0 24px rgba(92, 242, 232, 0.45);
+        transform: translate(-50%, -50%);
+        animation: splash-pulse 1.6s ease-in-out infinite;
+      }
+      .splash__wordmark {
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.42em;
+        color: #5cf2e8;
+        text-shadow:
+          0 0 10px rgba(92, 242, 232, 0.7),
+          0 0 24px rgba(92, 242, 232, 0.35);
+        text-transform: uppercase;
+        /* Sliding gradient highlight from left to right. */
+        background: linear-gradient(
+          90deg,
+          rgba(92, 242, 232, 1) 0%,
+          rgba(196, 108, 255, 1) 50%,
+          rgba(92, 242, 232, 1) 100%
+        );
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: splash-shimmer 3.2s linear infinite;
+      }
+      .splash__status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        color: rgba(216, 255, 251, 0.78);
+      }
+      .splash__status-prompt {
+        color: #5cf2e8;
+        text-shadow: 0 0 6px rgba(92, 242, 232, 0.7);
+      }
+      .splash__status-text {
+        display: inline-block;
+        overflow: hidden;
+        white-space: nowrap;
+        animation: splash-type 1.4s steps(14) 320ms infinite;
+      }
+      .splash__status-caret {
+        display: inline-block;
+        width: 6px;
+        height: 11px;
+        background: #5cf2e8;
+        box-shadow: 0 0 6px rgba(92, 242, 232, 0.85);
+        animation: hover-toast-blink 0.9s steps(2) infinite;
+      }
+      .splash__bar {
+        position: relative;
+        width: 200px;
+        height: 2px;
+        background: rgba(92, 242, 232, 0.14);
+        border-radius: 1px;
+        overflow: hidden;
+      }
+      .splash__bar-fill {
+        position: absolute;
+        top: 0;
+        left: -40%;
+        width: 40%;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          #5cf2e8 50%,
+          transparent 100%
+        );
+        box-shadow: 0 0 8px rgba(92, 242, 232, 0.6);
+        animation: splash-bar 1.6s ease-in-out infinite;
+      }
+      @keyframes splash-spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes splash-pulse {
+        0%, 100% {
+          opacity: 0.9;
+          transform: translate(-50%, -50%) scale(1);
+        }
+        50% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1.4);
+        }
+      }
+      @keyframes splash-shimmer {
+        0% {
+          background-position: -100% 0;
+        }
+        100% {
+          background-position: 200% 0;
+        }
+      }
+      @keyframes splash-type {
+        0% {
+          width: 0;
+        }
+        45%, 100% {
+          width: 100%;
+        }
+      }
+      @keyframes splash-scan {
+        0% {
+          background-position: 0 0;
+        }
+        100% {
+          background-position: 0 12px;
+        }
+      }
+      @keyframes splash-enter {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.96);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      @keyframes splash-bar {
+        0% {
+          left: -40%;
+        }
+        100% {
+          left: 100%;
+        }
+      }
     </style>
   </head>
   <body>

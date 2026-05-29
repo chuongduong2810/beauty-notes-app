@@ -1,13 +1,24 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Text } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { animated, useSpring } from "@react-spring/three";
-import { Group, Vector3 } from "three";
+import { Group, Mesh as ThreeMesh, Vector3 } from "three";
 import { paletteEntry } from "../lib/palette";
 import { noteLocalTransform } from "../lib/note-placement";
 import { createPaperTexture } from "../lib/note-paper-texture";
 import type { Note } from "../lib/room";
 import { useAppStore } from "../store";
+import { HoverTooltip } from "./HoverTooltip";
+
+/**
+ * Three.js's default Mesh.prototype.raycast — pass this explicitly
+ * when raycast is enabled, NEVER `undefined`. Passing undefined as a
+ * JSX prop makes R3F assign `mesh.raycast = undefined` on the
+ * instance, which shadows the prototype method and crashes the next
+ * raycast with "object.raycast is not a function".
+ */
+const DEFAULT_MESH_RAYCAST = ThreeMesh.prototype.raycast;
+const NO_RAYCAST = () => null;
 
 /**
  * World position (metres) where the crumple animation lands — slightly
@@ -95,6 +106,29 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
   const isEditing = editingNoteId === note.id;
   const crumplingNoteId = useAppStore((s) => s.crumplingNoteId);
   const isCrumpling = crumplingNoteId === note.id;
+  /**
+   * In Pen / Eraser modes Notes are pointer-pass-through (issue #35) —
+   * a pen-down lands on the Surface behind, not on the Note. We do this
+   * by skipping the raycast on the Note's interactive meshes when the
+   * tool isn't `"note"`.
+   */
+  const currentTool = useAppStore((s) => s.penState.currentTool);
+  const noteIsInteractive = currentTool === "note";
+  const noteRaycast = noteIsInteractive ? DEFAULT_MESH_RAYCAST : NO_RAYCAST;
+  const [hovered, setHovered] = useState(false);
+
+  /**
+   * What to show in the toast on hover. Long bodies are truncated;
+   * an empty Note reads "Click to edit" instead of a blank subtitle.
+   */
+  const tooltipSubtitle = (() => {
+    const trimmed = note.body.trim();
+    if (!trimmed) return "Click to edit";
+    const oneLine = trimmed.replace(/\s+/g, " ");
+    return oneLine.length > 28 ? `${oneLine.slice(0, 28)}…` : oneLine;
+  })();
+  const tooltipVisible =
+    hovered && noteIsInteractive && !isDragging && !isEditing && !isCrumpling;
 
   const pointerState = useRef<{
     pointerId: number | null;
@@ -283,7 +317,11 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
           palette's `shadow` colour peeks out around the front face and
           silhouettes the Note against warm-white walls. Cheap: one
           extra plane per Note, no shadow caster. */}
-      <mesh position-z={-0.0002} receiveShadow>
+      <mesh
+        position-z={-0.0002}
+        receiveShadow
+        raycast={noteRaycast}
+      >
         <planeGeometry
           args={[t.size_m[0] + 0.003, t.size_m[1] + 0.003]}
         />
@@ -296,10 +334,16 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
       <mesh
         castShadow
         receiveShadow
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerDown={noteIsInteractive ? onPointerDown : undefined}
+        onPointerMove={noteIsInteractive ? onPointerMove : undefined}
+        onPointerUp={noteIsInteractive ? onPointerUp : undefined}
+        onPointerCancel={noteIsInteractive ? onPointerUp : undefined}
+        onPointerEnter={(e) => {
+          e.stopPropagation();
+          setHovered(true);
+        }}
+        onPointerLeave={() => setHovered(false)}
+        raycast={noteRaycast}
       >
         <planeGeometry args={t.size_m} />
         <meshStandardMaterial
@@ -315,6 +359,7 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
       <mesh
         position={[0, t.size_m[1] / 2 - 0.006, 0.005]}
         castShadow
+        raycast={noteRaycast}
       >
         <sphereGeometry args={[0.0045, 16, 12]} />
         <meshStandardMaterial
@@ -323,6 +368,15 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
           metalness={0.35}
         />
       </mesh>
+      {/* Hover HUD toast above the Note. Hidden while dragging /
+          editing / crumpling so it doesn't fight the existing visual
+          feedback for those states. */}
+      <HoverTooltip
+        visible={tooltipVisible}
+        title="Note"
+        subtitle={tooltipSubtitle}
+        position={[0, t.size_m[1] / 2 + 0.04, 0.01]}
+      />
       {!isEditing && (
         <Text
           position={[
