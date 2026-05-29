@@ -3,6 +3,7 @@ import { useSpring, animated } from "@react-spring/three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Html, Text } from "@react-three/drei";
 import { createPaperTexture } from "../lib/note-paper-texture";
+import { createNotebookPageTexture } from "../lib/notebook-page-texture";
 import { notebookCoverRotation } from "../lib/notebook-pose";
 import {
   buildNotebookSections,
@@ -50,6 +51,11 @@ import { HoverTooltip } from "./HoverTooltip";
 // built once at module load (no-op / null in non-DOM test envs). Same
 // pattern as NoteMesh.
 const PAPER_TEXTURE = createPaperTexture();
+// Softer, warmer ruled texture for the open pages (the Note texture's
+// near-black rules read grey at this distance).
+const PAGE_PAPER_TEXTURE = createNotebookPageTexture();
+/** Warm-white tint for the open page planes so the cream texture reads true. */
+const OPEN_PAGE_COLOR = "#fffdf7";
 
 const COVER_COLOR = "#7a4a2b"; // warm leather-brown cover
 const SPINE_COLOR = "#653b22"; // slightly darker spine
@@ -73,12 +79,13 @@ const PAGE_STACK_HEIGHT = 0.03;
 const BOOK_POSITION: [number, number, number] = [-0.5, 0.79, -2.15];
 
 /**
- * drei `<Html transform>` perspective-scale for the page content. Sized
- * so the fixed-px page DOM (150 × 196) fills ~90% of each ~0.2 m page
- * rather than floating small in the middle of it. Tunable by eye —
- * lower = smaller content on the page.
+ * drei `<Html transform>` page-content scale. drei renders the DOM at
+ * `world = px × distanceFactor / 400`, so the 184 × 240 px page DOM at
+ * 0.37 maps to ~0.17 × 0.22 m — ~82% of the ~0.207 m page width and
+ * ~84% of its depth, centred, so the ruled paper shows as a margin all
+ * around. Tunable by eye — lower = smaller content on the page.
  */
-const PAGE_HTML_DISTANCE = 0.3;
+const PAGE_HTML_DISTANCE = 0.37;
 
 /**
  * Open "reading pose" (issue #57 follow-up). Flat on the desk the open
@@ -483,8 +490,8 @@ export function Notebook({
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-BOOK_WIDTH / 2, 0, 0]}>
               <planeGeometry args={[BOOK_WIDTH * 0.94, BOOK_DEPTH * 0.94]} />
               <meshStandardMaterial
-                color={PAGE_COLOR}
-                map={PAPER_TEXTURE ?? undefined}
+                color={OPEN_PAGE_COLOR}
+                map={PAGE_PAPER_TEXTURE ?? undefined}
                 roughness={0.95}
                 metalness={0}
               />
@@ -493,8 +500,8 @@ export function Notebook({
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[BOOK_WIDTH / 2, 0, 0]}>
               <planeGeometry args={[BOOK_WIDTH * 0.94, BOOK_DEPTH * 0.94]} />
               <meshStandardMaterial
-                color={PAGE_COLOR}
-                map={PAPER_TEXTURE ?? undefined}
+                color={OPEN_PAGE_COLOR}
+                map={PAGE_PAPER_TEXTURE ?? undefined}
                 roughness={0.95}
                 metalness={0}
               />
