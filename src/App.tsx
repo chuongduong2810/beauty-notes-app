@@ -21,6 +21,7 @@ import { SplashScreen } from "./components/SplashScreen";
 import { OrbitRadiusKeeper } from "./components/OrbitRadiusKeeper";
 import { RoomPicker } from "./components/RoomPicker";
 import { RoomSwitchingOverlay } from "./components/RoomSwitchingOverlay";
+import { SearchOverlay } from "./components/SearchOverlay";
 import { ToolPalette } from "./components/ToolPalette";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
@@ -402,12 +403,12 @@ export function App() {
     [focusNote],
   );
 
-  // Selecting a Note from the Notebook (issue #57): reuse the exact
-  // click-to-focus path (snapshots the orbit pose + runs the Focus
-  // transition) so the camera-pose math isn't duplicated, then add a
-  // brief arrival highlight pulse.
+  // Select-and-fly: reuse the exact click-to-focus path (snapshots the
+  // orbit pose + runs the Focus transition) so the camera-pose math
+  // isn't duplicated, then add a brief arrival highlight pulse. Shared
+  // by the Notebook (issue #57) and the Search overlay (issue #66).
   const highlightNote = useAppStore((s) => s.highlightNote);
-  const onNotebookSelect = useCallback(
+  const flyToNote = useCallback(
     (noteId: string) => {
       onNoteClick(noteId);
       highlightNote(noteId);
@@ -493,7 +494,7 @@ export function App() {
             (ADR-0016) that opens/closes with a react-spring animation
             (#56). Page content is mounted by #57 onto the page anchors
             it leaves on the open spread. */}
-        <Notebook onSelectNote={onNotebookSelect} />
+        <Notebook onSelectNote={flyToNote} />
         {/* Window on wall_west looking onto a foggy City skyline (#42).
             Set-dressing in front of the wall + a procedural skyline beyond
             the Room boundary; primitive geometry only. */}
@@ -507,6 +508,7 @@ export function App() {
       <NoteEditor />
       <RoomPicker />
       <ToolPalette />
+      <SearchOverlay flyToNote={flyToNote} />
       <RoomSwitchingOverlay />
       <SplashScreen />
     </div>
