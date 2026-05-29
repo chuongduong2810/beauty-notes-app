@@ -17,6 +17,48 @@ import { useAppStore } from "../store";
 import { HoverTooltip } from "./HoverTooltip";
 
 /**
+ * Room-ownership slice of the app store, shipped by issue #70 (the
+ * "claim this room" magic-link flow). Consumed read-only here — this
+ * component never mutates store.ts. Declared locally as a typed view so
+ * this branch compiles and is self-green before #70 merges; once #70
+ * lands these exact fields exist on `AppState` and this view simply
+ * mirrors them. Field/method names match the #70 contract verbatim.
+ */
+type OwnershipStoreSlice = {
+  /** Where the magic-link claim flow currently sits. */
+  claimStatus: "idle" | "sending" | "sent" | "claimed" | "error";
+  /** Human-readable error from the last failed claim attempt, if any. */
+  claimError: string | null;
+  /** Kick off the magic-link claim for `email`. */
+  claimRoom: (email: string) => Promise<void>;
+  /** Reset the claim flow back to idle (e.g. "use a different email"). */
+  resetClaim: () => void;
+};
+
+/**
+ * Read the #70 ownership slice off the store with the contract types.
+ * Until #70 merges these keys aren't on the store type, so we read
+ * through an `unknown` view rather than `any` to keep it type-checked.
+ *
+ * @param selector - picks a value out of the ownership slice.
+ * @returns the selected ownership value, reactively.
+ */
+function useOwnershipStore<T>(selector: (slice: OwnershipStoreSlice) => T): T {
+  return useAppStore((s) => selector(s as unknown as OwnershipStoreSlice));
+}
+
+/** Local-only tab union: the three real sections plus the ownership page. */
+type NotebookTabKey = NotebookSectionKey | "ownership";
+
+/** Owner display name: the email's local part, falling back to the full
+ *  address. Used on the ownership certificate. */
+function ownerDisplay(email: string | null | undefined): string {
+  if (!email) return "Owner";
+  const at = email.indexOf("@");
+  return at > 0 ? email.slice(0, at) : email;
+}
+
+/**
  * A physical Notebook resting on the desk as permanent set-dressing
  * (CONTEXT.md, ADR-0016). Built from primitive geometries only (cover
  * boxes + a page stack + a spine) so it matches the perf footprint of
@@ -119,12 +161,33 @@ function timeAgo(iso: string): string {
  */
 function NotebookSpread({
   onSelectNote,
+  tab,
+  setTab,
 }: {
   onSelectNote: (noteId: string) => void;
+  /** Active tab — lifted to Notebook so the auto-reveal effect can drive
+   *  it to "ownership" when a claim completes. */
+  tab: NotebookTabKey;
+  setTab: (tab: NotebookTabKey) => void;
 }) {
   const notes = useAppStore((s) => s.notes);
   const sections = useMemo(() => buildNotebookSections(notes), [notes]);
-  const [section, setSection] = useState<NotebookSectionKey>("recentlyCreated");
+
+  // Ownership slice (#70) — read-only here.
+  const session = useAppStore((s) => s.session);
+  const currentRoom = useAppStore((s) => s.currentRoom);
+  const claimStatus = useOwnershipStore((s) => s.claimStatus);
+  const claimError = useOwnershipStore((s) => s.claimError);
+  const claimRoom = useOwnershipStore((s) => s.claimRoom);
+  const resetClaim = useOwnershipStore((s) => s.resetClaim);
+
+  const isGuest = session?.user.is_anonymous ?? true;
+  const ownerEmail = session?.user.email ?? null;
+  const claimed = !isGuest;
+
+  // Email typed into the claim form. Local to the open session.
+  const [email, setEmail] = useState("");
+  const emailValid = email.trim().length > 0 && email.includes("@");
 
   // The page content is DOM (drei <Html>) painted over the canvas — it
   // has no depth occlusion, so without this it bleeds through the book's
@@ -143,6 +206,11 @@ function NotebookSpread({
     }
   });
 
+  // The ownership tab sits outside NOTEBOOK_SECTION_KEYS; when it's
+  // active there is no section list to render. For the real sections we
+  // keep the existing list/page-turn behaviour.
+  const isOwnership = tab === "ownership";
+  const section: NotebookSectionKey = isOwnership ? "recentlyCreated" : tab;
   const entries = sections[section];
   const sectionIndex = NOTEBOOK_SECTION_KEYS.indexOf(section);
 
@@ -150,13 +218,19 @@ function NotebookSpread({
     const next =
       (sectionIndex + dir + NOTEBOOK_SECTION_KEYS.length) %
       NOTEBOOK_SECTION_KEYS.length;
-    setSection(NOTEBOOK_SECTION_KEYS[next]);
+    setTab(NOTEBOOK_SECTION_KEYS[next]);
   };
 
   const emptyMessage =
     section === "bookmarked"
       ? "Bookmark a note to keep it here."
       : "No notes yet — double-click a wall to pin one.";
+
+  /** Submit the claim form (button click or Enter in the input). */
+  const submitClaim = () => {
+    if (!emailValid || claimStatus === "sending") return;
+    void claimRoom(email.trim());
+  };
 
   // Viewing from behind the book → show only the cover, not the content.
   if (!front) return null;
@@ -183,11 +257,10 @@ function NotebookSpread({
                 key={key}
                 type="button"
                 className={
-                  "notebook-tab" +
-                  (key === section ? " notebook-tab--active" : "")
+                  "notebook-tab" + (key === tab ? " notebook-tab--active" : "")
                 }
                 onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => setSection(key)}
+                onClick={() => setTab(key)}
               >
                 {NOTEBOOK_SECTION_TITLES[key]}
                 <span className="notebook-tab__count">
@@ -195,6 +268,23 @@ function NotebookSpread({
                 </span>
               </button>
             ))}
+            {/* Fourth, special tab — the room-ownership page. Outside
+                NOTEBOOK_SECTION_KEYS; styled as a gold "stamp" so it
+                reads as the book's deed page. */}
+            <button
+              type="button"
+              className={
+                "notebook-tab notebook-tab--ownership" +
+                (isOwnership ? " notebook-tab--active" : "")
+              }
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setTab("ownership")}
+            >
+              {claimed ? "Ownership" : "Claim this room"}
+              <span className="notebook-tab__seal" aria-hidden="true">
+                ✦
+              </span>
+            </button>
           </div>
         </div>
       </Html>
@@ -212,6 +302,21 @@ function NotebookSpread({
         pointerEvents="auto"
       >
         <div className="notebook-page notebook-page--right">
+          {isOwnership ? (
+            <OwnershipPage
+              claimed={claimed}
+              claimStatus={claimStatus}
+              claimError={claimError}
+              email={email}
+              setEmail={setEmail}
+              emailValid={emailValid}
+              submitClaim={submitClaim}
+              resetClaim={resetClaim}
+              ownerEmail={ownerEmail}
+              roomName={currentRoom?.name ?? "this room"}
+            />
+          ) : (
+            <>
           <div className="notebook-page__title">
             {NOTEBOOK_SECTION_TITLES[section]}
           </div>
@@ -276,9 +381,125 @@ function NotebookSpread({
               ›
             </button>
           </div>
+            </>
+          )}
         </div>
       </Html>
     </group>
+  );
+}
+
+/**
+ * Right-page ownership content (issue #71). Branches on the #70 claim
+ * state machine: Claim form → "check your email" → ownership
+ * certificate. Rendered inside the same `<Html transform>` page as the
+ * note-index, so it reads as another printed page rather than a floating
+ * form. Pointer-down handlers stop propagation so typing/clicking inside
+ * the page never toggles or closes the book.
+ */
+function OwnershipPage({
+  claimed,
+  claimStatus,
+  claimError,
+  email,
+  setEmail,
+  emailValid,
+  submitClaim,
+  resetClaim,
+  ownerEmail,
+  roomName,
+}: {
+  claimed: boolean;
+  claimStatus: OwnershipStoreSlice["claimStatus"];
+  claimError: string | null;
+  email: string;
+  setEmail: (email: string) => void;
+  emailValid: boolean;
+  submitClaim: () => void;
+  resetClaim: () => void;
+  ownerEmail: string | null;
+  roomName: string;
+}) {
+  // Claimed — the cozy certificate.
+  if (claimed) {
+    return (
+      <div className="notebook-list--flip">
+        <div className="notebook-cert">
+          <div className="notebook-cert__seal" aria-hidden="true">
+            ✦
+          </div>
+          <div className="notebook-cert__kicker">Certificate of</div>
+          <div className="notebook-cert__title">Ownership</div>
+          <div className="notebook-cert__rule" />
+          <dl className="notebook-cert__fields">
+            <dt>Owner</dt>
+            <dd>{ownerDisplay(ownerEmail)}</dd>
+            <dt>Room</dt>
+            <dd>{roomName}</dd>
+          </dl>
+          <div className="notebook-cert__status">Owned</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Magic link sent — "check your email".
+  if (claimStatus === "sent") {
+    return (
+      <div className="notebook-list--flip">
+        <div className="notebook-page__title">Check your email</div>
+        <p className="notebook-claim__copy">
+          We sent a magic link to{" "}
+          <span className="notebook-claim__email">{email || "your inbox"}</span>{" "}
+          — open it to claim this room.
+        </p>
+        <button
+          type="button"
+          className="notebook-claim__alt"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => resetClaim()}
+        >
+          use a different email
+        </button>
+      </div>
+    );
+  }
+
+  // Guest, idle or error — the claim form.
+  const sending = claimStatus === "sending";
+  return (
+    <div className="notebook-list--flip">
+      <div className="notebook-page__title">Claim This Room</div>
+      <p className="notebook-claim__copy">
+        Sign your name to this room to keep it — we&apos;ll email you a magic
+        link.
+      </p>
+      <input
+        type="email"
+        className="notebook-claim__input"
+        placeholder="you@example.com"
+        value={email}
+        autoComplete="email"
+        spellCheck={false}
+        onPointerDown={(e) => e.stopPropagation()}
+        onChange={(e) => setEmail(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submitClaim();
+        }}
+      />
+      {claimStatus === "error" && claimError && (
+        <div className="notebook-claim__error">{claimError}</div>
+      )}
+      <button
+        type="button"
+        className="notebook-claim__cta"
+        disabled={!emailValid || sending}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => submitClaim()}
+      >
+        {sending ? "Signing…" : "Sign & Claim"}
+      </button>
+    </div>
   );
 }
 
@@ -292,6 +513,20 @@ export function Notebook({
 }) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
+  // Active spread tab. Lifted here (not inside NotebookSpread) so the
+  // auto-reveal effect can turn to the ownership page on a completed
+  // claim even while the book is shut.
+  const [tab, setTab] = useState<NotebookTabKey>("recentlyCreated");
+
+  // Auto-reveal on claim success (#71): when the room becomes claimed,
+  // open the book and turn to the ownership certificate.
+  const claimStatus = useOwnershipStore((s) => s.claimStatus);
+  useEffect(() => {
+    if (claimStatus === "claimed") {
+      setOpen(true);
+      setTab("ownership");
+    }
+  }, [claimStatus]);
 
   // Escape closes the open book — mirrors the focus/editor escape
   // affordances elsewhere in the app.
@@ -512,7 +747,13 @@ export function Notebook({
         {/* The page index content rides on the open spread via
             <Html transform> (ADR-0016). Mounted separately so its own
             section state is scoped to one open session. */}
-        {open && <NotebookSpread onSelectNote={handleSelect} />}
+        {open && (
+          <NotebookSpread
+            onSelectNote={handleSelect}
+            tab={tab}
+            setTab={setTab}
+          />
+        )}
 
         {/* Hover toast above the book — same futuristic HUD card as the
             pen prop. */}
