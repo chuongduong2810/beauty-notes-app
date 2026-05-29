@@ -106,6 +106,10 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
   const isEditing = editingNoteId === note.id;
   const crumplingNoteId = useAppStore((s) => s.crumplingNoteId);
   const isCrumpling = crumplingNoteId === note.id;
+  // Brief emissive pulse when the User navigates to this Note from the
+  // Notebook (issue #57) — the "highlight it" on arrival.
+  const highlightNoteId = useAppStore((s) => s.highlightNoteId);
+  const isHighlighted = highlightNoteId === note.id;
   /**
    * In Pen / Eraser modes Notes are pointer-pass-through (issue #35) —
    * a pen-down lands on the Surface behind, not on the Note. We do this
@@ -186,6 +190,8 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
     sx: 1,
     sy: 1,
     sz: 1,
+    // Emissive intensity for the Notebook "highlight" pulse (issue #57).
+    glow: 0,
     config: { mass: 0.6, tension: 220, friction: 16 },
   }));
 
@@ -299,6 +305,19 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
     });
   }, [isCrumpling, springApi]);
 
+  // Notebook "highlight" pulse (issue #57): when this Note becomes the
+  // highlight target, swell the emissive glow up and ease it back down
+  // so the Note flashes warmly as the Camera arrives, then settles.
+  useEffect(() => {
+    if (!isHighlighted) return;
+    springApi.start({
+      to: async (next) => {
+        await next({ glow: 1, config: { tension: 280, friction: 12 } });
+        await next({ glow: 0, config: { tension: 90, friction: 20 } });
+      },
+    });
+  }, [isHighlighted, springApi]);
+
   return (
     <animated.group
       ref={groupRef}
@@ -346,11 +365,16 @@ function NoteMeshImpl({ note, surfaceWidthM, surfaceHeightM, onClick }: Props) {
         raycast={noteRaycast}
       >
         <planeGeometry args={t.size_m} />
-        <meshStandardMaterial
+        <animated.meshStandardMaterial
           color={color}
           map={PAPER_TEXTURE ?? undefined}
           roughness={0.85}
           metalness={0}
+          // Notebook navigation highlight (issue #57): emissive swells
+          // toward the Note's own hue so it glows warmly on arrival, then
+          // returns to 0. At rest (glow=0) this is a no-op.
+          emissive={color}
+          emissiveIntensity={spring.glow.to((g) => g * 0.6)}
         />
       </mesh>
       {/* Red push-pin at the top centre — the visual signature of a
