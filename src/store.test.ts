@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "./store";
 import type { CanvasRepository } from "./lib/canvas-repository";
 import type { Note, Room } from "./lib/room";
+import { entitlementsForTier } from "./lib/entitlements";
 
 // Mock the Supabase client so claimRoom's `updateUser` (issue #70),
 // sendRestoreLink's `signInWithOtp` (issue #82) and restoreWithPassword's
@@ -640,5 +641,70 @@ describe("store — set / reset password (issue #96, ADR-0020)", () => {
 
     expect(useAppStore.getState().recoverStatus).toBe("error");
     expect(useAppStore.getState().recoverError).toBe("weak password");
+  });
+});
+
+describe("store — membership entitlements (issue #104, ADR-0021)", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      repo: null,
+      session: { user: { id: "u1" } } as never,
+      membership: null,
+      entitlements: entitlementsForTier("explorer"),
+    });
+  });
+
+  it("defaults to Explorer entitlements when there is no membership", async () => {
+    const repo = {
+      async getMembership() {
+        return null;
+      },
+    } as unknown as CanvasRepository;
+    useAppStore.setState({ repo });
+
+    await useAppStore.getState().refreshMembership();
+
+    const e = useAppStore.getState().entitlements;
+    expect(e.maxRooms).toBe(1);
+    expect(e.photoMode).toBe(false);
+    expect(useAppStore.getState().membership).toBeNull();
+  });
+
+  it("derives Resident entitlements from an active resident membership", async () => {
+    const repo = {
+      async getMembership() {
+        return {
+          tier: "resident",
+          status: "active",
+          current_period_end: "2999-01-01T00:00:00Z",
+        };
+      },
+    } as unknown as CanvasRepository;
+    useAppStore.setState({ repo });
+
+    await useAppStore.getState().refreshMembership();
+
+    const e = useAppStore.getState().entitlements;
+    expect(e.photoMode).toBe(true);
+    expect(e.cameraViewpoints).toBe(true);
+    expect(e.maxRooms).toBe(1); // Resident is still single-room (ADR-0021)
+    expect(e.blueprintMode).toBe(false);
+  });
+
+  it("falls back to Explorer for an expired membership", async () => {
+    const repo = {
+      async getMembership() {
+        return {
+          tier: "studio",
+          status: "active",
+          current_period_end: "2000-01-01T00:00:00Z",
+        };
+      },
+    } as unknown as CanvasRepository;
+    useAppStore.setState({ repo });
+
+    await useAppStore.getState().refreshMembership();
+
+    expect(useAppStore.getState().entitlements.maxRooms).toBe(1);
   });
 });

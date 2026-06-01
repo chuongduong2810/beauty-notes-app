@@ -7,6 +7,7 @@ import {
   type Note,
 } from "./room";
 import type { Annotation, Stroke, StrokePoint } from "./stroke";
+import type { Membership } from "./entitlements";
 
 /** Raw row shape returned by `select` on annotation_strokes. */
 type StrokeRow = {
@@ -23,6 +24,19 @@ export function supabaseCanvasRepository(
   supabase: SupabaseClient,
 ): CanvasRepository {
   return {
+    async getMembership(ownerId) {
+      // Only the fields entitlement derivation needs (tier, status, period
+      // end); RLS limits this to the User's own row (ADR-0023). `maybeSingle`
+      // yields `null` rather than throwing when the User has no Membership.
+      const { data, error } = await supabase
+        .from("memberships")
+        .select("tier, status, current_period_end")
+        .eq("owner_id", ownerId)
+        .maybeSingle();
+      if (error) throw error;
+      return data as Membership;
+    },
+
     async insertRoom(owner_id, name) {
       const { data: room, error: roomErr } = await supabase
         .from("rooms")

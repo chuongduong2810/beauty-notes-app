@@ -31,6 +31,12 @@ import {
   type Room,
   type Surface,
 } from "./lib/room";
+import {
+  entitlementsForTier,
+  tierFromMembership,
+  type Entitlements,
+  type Membership,
+} from "./lib/entitlements";
 import type { Annotation, Stroke, StrokePoint } from "./lib/stroke";
 
 /** Tiny non-cryptographic id for optimistic Annotation / Stroke rows
@@ -235,6 +241,14 @@ type AppState = {
   repo: CanvasRepository | null;
   ready: boolean;
 
+  /** The User's Membership (subscription state, ADR-0021), or null when they
+   *  have none. Read-only on the client; the Stripe webhook is the sole
+   *  writer (ADR-0023). */
+  membership: Membership;
+  /** Capabilities derived purely from the current Membership's tier
+   *  (ADR-0021). Absent/expired Membership ⇒ Explorer (free) entitlements. */
+  entitlements: Entitlements;
+
   /** Current stage of the Room-claim flow (issue #70). */
   claimStatus: ClaimStatus;
   /** Human-readable failure reason when `claimStatus === "error"`. */
@@ -328,6 +342,13 @@ type AppState = {
 
   setSession: (session: Session | null) => void;
   setRepo: (repo: CanvasRepository) => void;
+  /**
+   * Re-read the current User's Membership and recompute `entitlements`
+   * (issue #104, ADR-0021). Called on bootstrap and on return from the
+   * billing flow so newly unlocked capabilities appear immediately. No-op
+   * without a repo + session.
+   */
+  refreshMembership: () => Promise<void>;
   /**
    * Claim the current Room by promoting the anonymous User to a
    * permanent email account (issue #70, ADR-0018). Sets the account's
@@ -481,6 +502,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   session: null,
   repo: null,
   ready: false,
+  membership: null,
+  entitlements: entitlementsForTier("explorer"),
   switchingRoom: false,
 
   claimStatus: "idle",
@@ -517,6 +540,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSession: (session) => set({ session }),
   setRepo: (repo) => set({ repo }),
+
+  refreshMembership: async () => {
+    const { repo, session } = get();
+    if (!repo || !session) return;
+    try {
+      const membership = await repo.getMembership(session.user.id);
+      set({
+        membership,
+        entitlements: entitlementsForTier(tierFromMembership(membership)),
+      });
+    } catch (err) {
+      // Non-fatal: a read failure just leaves the User on their last-known
+      // (or Explorer) entitlements rather than blocking the Room.
+      console.warn("refreshMembership failed", err);
+    }
+  },
 
   claimRoom: async (email, password) => {
     const { currentRoom } = get();

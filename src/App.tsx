@@ -324,6 +324,9 @@ export function App() {
         setRepo(supabaseCanvasRepository(supabase));
         setRooms(rooms);
         setRoom(room, surfaces, notes, annotations);
+        // Load the User's Membership so entitlements are populated once the
+        // Room is ready (issue #104, ADR-0021). Repo + session are set above.
+        void useAppStore.getState().refreshMembership();
         // Normalise the URL: if we landed at /, push the resolved
         // Room id so reloads + bookmarks both go straight to this Room.
         if (window.location.pathname !== roomPath(room.id)) {
