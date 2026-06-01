@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   claimRedirectUrl,
   ownershipFromSession,
+  resetPasswordRedirectUrl,
   restoreRedirectUrl,
 } from "./ownership";
 
@@ -73,6 +74,14 @@ describe("claimRedirectUrl (issue #70)", () => {
 describe("restoreRedirectUrl (issue #82)", () => {
   it("returns the app origin root, not a per-Room route", () => {
     expect(restoreRedirectUrl("https://notes.example.com")).toBe(
+      "https://notes.example.com/",
+    );
+  });
+});
+
+describe("resetPasswordRedirectUrl (ADR-0020)", () => {
+  it("returns the app origin root for the password-recovery return", () => {
+    expect(resetPasswordRedirectUrl("https://notes.example.com")).toBe(
       "https://notes.example.com/",
     );
   });
