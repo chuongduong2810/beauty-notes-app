@@ -43,3 +43,17 @@ export function ownershipFromSession(session: Session | null): Ownership {
 export function claimRedirectUrl(roomId: string, origin: string): string {
   return origin + roomPath(roomId);
 }
+
+/**
+ * Build the magic-link return URL for a Restore (issue #82, ADR-0019):
+ * the app origin root, NOT a per-Room route. Unlike {@link claimRedirectUrl},
+ * Restore runs on a *fresh* device that hasn't loaded any Room yet, so it
+ * cannot know which Room to land on. The restore-return handler lists the
+ * now-permanent account's Rooms and routes from there.
+ *
+ * @param origin - the page origin, e.g. `window.location.origin`.
+ * @returns `${origin}/` — the app root.
+ */
+export function restoreRedirectUrl(origin: string): string {
+  return origin + "/";
+}

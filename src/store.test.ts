@@ -3,11 +3,18 @@ import { useAppStore } from "./store";
 import type { CanvasRepository } from "./lib/canvas-repository";
 import type { Note, Room } from "./lib/room";
 
-// Mock the Supabase client so claimRoom's `updateUser` call is
-// controllable and never hits the network (issue #70).
+// Mock the Supabase client so claimRoom's `updateUser` (issue #70) and
+// sendRestoreLink's `signInWithOtp` (issue #82) calls are controllable
+// and never hit the network.
 const updateUser = vi.fn();
+const signInWithOtp = vi.fn();
 vi.mock("./lib/supabase", () => ({
-  supabase: { auth: { updateUser: (...args: unknown[]) => updateUser(...args) } },
+  supabase: {
+    auth: {
+      updateUser: (...args: unknown[]) => updateUser(...args),
+      signInWithOtp: (...args: unknown[]) => signInWithOtp(...args),
+    },
+  },
 }));
 
 /** Minimal Room fixture for the claim flow (only `id` is read). */
@@ -119,5 +126,120 @@ describe("store — claimRoom / resetClaim (issue #70)", () => {
 
     expect(useAppStore.getState().claimStatus).toBe("idle");
     expect(useAppStore.getState().claimError).toBeNull();
+  });
+});
+
+describe("store — restore flow (issue #82, ADR-0019)", () => {
+  beforeEach(() => {
+    signInWithOtp.mockReset();
+    window.localStorage.clear();
+    useAppStore.setState({
+      restoreStatus: "idle",
+      restoreError: null,
+      session: null,
+      repo: null,
+      currentRoom: null,
+    });
+  });
+
+  it("sendRestoreLink flips sending → sent and signs in with OTP", async () => {
+    signInWithOtp.mockResolvedValue({ data: {}, error: null });
+
+    await useAppStore.getState().sendRestoreLink("ada@example.com");
+
+    expect(useAppStore.getState().restoreStatus).toBe("sent");
+    expect(useAppStore.getState().restoreError).toBeNull();
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      email: "ada@example.com",
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: `${window.location.origin}/`,
+      },
+    });
+  });
+
+  it("sendRestoreLink records the 'restore' auth-intent before sending", async () => {
+    signInWithOtp.mockResolvedValue({ data: {}, error: null });
+
+    await useAppStore.getState().sendRestoreLink("ada@example.com");
+
+    expect(window.localStorage.getItem("bn.auth-intent")).toBe("restore");
+  });
+
+  it("sendRestoreLink flips to error with a message when the send fails", async () => {
+    signInWithOtp.mockResolvedValue({
+      data: {},
+      error: new Error("not found"),
+    });
+
+    await useAppStore.getState().sendRestoreLink("ada@example.com");
+
+    expect(useAppStore.getState().restoreStatus).toBe("error");
+    expect(useAppStore.getState().restoreError).toBe("not found");
+  });
+
+  it("completeRestore loads the single Room and clears the intent", async () => {
+    window.localStorage.setItem("bn.auth-intent", "restore");
+    const onlyRoom = { id: "room-1", name: "Studio" } as unknown as Room;
+    let loadedRoomId: string | null = null;
+    const repo = {
+      async listRooms() {
+        return [onlyRoom];
+      },
+      async listSurfaces(roomId: string) {
+        loadedRoomId = roomId;
+        return [{ id: "s1", owner_id: "u1" }];
+      },
+      async listNotes() {
+        return [];
+      },
+      async listAnnotations() {
+        return [];
+      },
+    } as unknown as CanvasRepository;
+
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "u1" } } as never,
+    });
+
+    await useAppStore.getState().completeRestore();
+
+    expect(useAppStore.getState().restoreStatus).toBe("done");
+    expect(useAppStore.getState().currentRoom?.id).toBe("room-1");
+    expect(loadedRoomId).toBe("room-1");
+    expect(window.localStorage.getItem("bn.auth-intent")).toBeNull();
+  });
+
+  it("completeRestore is 'done' without loading on 0 or >1 Rooms (issues #83/#85)", async () => {
+    window.localStorage.setItem("bn.auth-intent", "restore");
+    const repo = {
+      async listRooms() {
+        return [
+          { id: "a" } as unknown as Room,
+          { id: "b" } as unknown as Room,
+        ];
+      },
+    } as unknown as CanvasRepository;
+
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "u1" } } as never,
+      currentRoom: null,
+    });
+
+    await useAppStore.getState().completeRestore();
+
+    expect(useAppStore.getState().restoreStatus).toBe("done");
+    expect(useAppStore.getState().currentRoom).toBeNull();
+  });
+
+  it("resetRestore returns to idle and clears the error", () => {
+    useAppStore.setState({ restoreStatus: "error", restoreError: "boom" });
+
+    useAppStore.getState().resetRestore();
+
+    expect(useAppStore.getState().restoreStatus).toBe("idle");
+    expect(useAppStore.getState().restoreError).toBeNull();
   });
 });

@@ -24,6 +24,7 @@ import { RoomPicker } from "./components/RoomPicker";
 import { RoomSwitchingOverlay } from "./components/RoomSwitchingOverlay";
 import { SearchOverlay } from "./components/SearchOverlay";
 import { ToolPalette } from "./components/ToolPalette";
+import { getAuthIntent } from "./lib/auth-intent";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
@@ -335,19 +336,26 @@ export function App() {
     };
   }, [setSession, setRepo, setRoom, setRooms]);
 
-  // Magic-link claim return (issue #70, ADR-0018). `detectSessionInUrl`
-  // (Supabase default) restores the session from the link's hash, which
-  // fires an auth state change. When the User has just become permanent —
-  // they now have an `email` and are no longer anonymous on a
-  // USER_UPDATED / SIGNED_IN transition — adopt the new Session and flip
-  // `claimStatus` to "claimed". The UUID is unchanged so no data moves.
+  // Magic-link return for both Claim (issue #70, ADR-0018) and Restore
+  // (issue #82, ADR-0019). `detectSessionInUrl` (Supabase default)
+  // restores the session from the link's hash, which fires an auth state
+  // change. When the User has just become permanent — they now have an
+  // `email` and are no longer anonymous on a USER_UPDATED / SIGNED_IN
+  // transition — adopt the new Session, then branch on the persisted
+  // auth-intent: Restore swaps into the existing account and reopens its
+  // Room; Claim (the default) pops the ownership certificate. Telling the
+  // two returns apart via the intent flag is the crux of ADR-0019.
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (event !== "USER_UPDATED" && event !== "SIGNED_IN") return;
       const user = session?.user;
       if (!user || !user.email || user.is_anonymous) return;
       setSession(session);
-      useAppStore.setState({ claimStatus: "claimed" });
+      if (getAuthIntent() === "restore") {
+        void useAppStore.getState().completeRestore();
+      } else {
+        useAppStore.setState({ claimStatus: "claimed" });
+      }
     });
     return () => data.subscription.unsubscribe();
   }, [setSession]);
