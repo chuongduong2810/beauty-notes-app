@@ -745,3 +745,40 @@ describe("store — applyCustomization (issue #107, ADR-0022)", () => {
     expect(useAppStore.getState().customizationRefused).toBe(true);
   });
 });
+
+describe("store — createRoom multi-room gating (issue #109, ADR-0021)", () => {
+  it("refuses to create beyond the Plan's Room cap (Explorer = 1)", async () => {
+    const repo = new InMemoryCanvasRepository();
+    const room = await repo.insertRoom("u1", "Room");
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "u1" } } as never,
+      currentRoom: room,
+      rooms: [room],
+      entitlements: entitlementsForTier("explorer"),
+    } as never);
+
+    const created = await useAppStore.getState().createRoom("Second");
+
+    expect(created).toBeNull();
+    expect(repo.rooms).toHaveLength(1); // nothing new persisted
+    expect(useAppStore.getState().rooms).toHaveLength(1);
+  });
+
+  it("allows creation under the cap (Studio = unlimited)", async () => {
+    const repo = new InMemoryCanvasRepository();
+    const room = await repo.insertRoom("u1", "Room");
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "u1" } } as never,
+      currentRoom: room,
+      rooms: [room],
+      entitlements: entitlementsForTier("studio"),
+    } as never);
+
+    const created = await useAppStore.getState().createRoom("Second");
+
+    expect(created).not.toBeNull();
+    expect(repo.rooms.length).toBeGreaterThan(1);
+  });
+});
