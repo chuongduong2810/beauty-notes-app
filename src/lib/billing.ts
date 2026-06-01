@@ -13,6 +13,7 @@ import {
   type Tier,
 } from "./entitlements";
 import { useAppStore } from "../store";
+import { supabase } from "./supabase";
 
 /**
  * The seam the Membership UI calls to start an upgrade. `startCheckout` takes a
@@ -64,10 +65,36 @@ export const mockBillingProvider: BillingProvider = {
 };
 
 /**
- * Resolve the active {@link BillingProvider}. Returns the
- * {@link mockBillingProvider} for now; the real Stripe-backed provider is
- * wired in #106 (it will be selected here behind config/env).
+ * The real Stripe-backed provider (#106, ADR-0023). Calls the
+ * `create-checkout-session` Edge Function (which holds the Stripe secret and
+ * maps the tier to a price) and resolves with the hosted-checkout URL the
+ * client redirects to. The resulting subscription is recorded by the
+ * `stripe-webhook` function — the client never writes entitlements.
+ */
+export const stripeBillingProvider: BillingProvider = {
+  async startCheckout(tier) {
+    const roomId = useAppStore.getState().currentRoom?.id ?? "";
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const { data, error } = await supabase.functions.invoke(
+      "create-checkout-session",
+      { body: { tier, roomId, origin } },
+    );
+    if (error) throw error;
+    const url = (data as { url?: string } | null)?.url;
+    if (!url) throw new Error("create-checkout-session returned no URL");
+    return { url };
+  },
+};
+
+/**
+ * Resolve the active {@link BillingProvider}. Uses the real Stripe provider
+ * when `VITE_STRIPE_ENABLED === "true"` (i.e. the Edge Functions are deployed
+ * and Stripe is configured — see supabase/functions/README.md); otherwise the
+ * {@link mockBillingProvider} dev stand-in, so the flow stays usable and
+ * testable without a live Stripe.
  */
 export function getBillingProvider(): BillingProvider {
-  return mockBillingProvider;
+  return import.meta.env.VITE_STRIPE_ENABLED === "true"
+    ? stripeBillingProvider
+    : mockBillingProvider;
 }
