@@ -3,16 +3,23 @@ import { useAppStore } from "./store";
 import type { CanvasRepository } from "./lib/canvas-repository";
 import type { Note, Room } from "./lib/room";
 
-// Mock the Supabase client so claimRoom's `updateUser` (issue #70) and
-// sendRestoreLink's `signInWithOtp` (issue #82) calls are controllable
-// and never hit the network.
+// Mock the Supabase client so claimRoom's `updateUser` (issue #70),
+// sendRestoreLink's `signInWithOtp` (issue #82) and restoreWithPassword's
+// `signInWithPassword` / session juggling (issue #95) are controllable and
+// never hit the network.
 const updateUser = vi.fn();
 const signInWithOtp = vi.fn();
+const signInWithPassword = vi.fn();
+const getSession = vi.fn();
+const setSession = vi.fn();
 vi.mock("./lib/supabase", () => ({
   supabase: {
     auth: {
       updateUser: (...args: unknown[]) => updateUser(...args),
       signInWithOtp: (...args: unknown[]) => signInWithOtp(...args),
+      signInWithPassword: (...args: unknown[]) => signInWithPassword(...args),
+      getSession: (...args: unknown[]) => getSession(...args),
+      setSession: (...args: unknown[]) => setSession(...args),
     },
   },
 }));
@@ -348,5 +355,190 @@ describe("store — restore flow (issue #82, ADR-0019)", () => {
 
     expect(useAppStore.getState().restoreStatus).toBe("idle");
     expect(useAppStore.getState().restoreError).toBeNull();
+  });
+});
+
+describe("store — restoreWithPassword (issue #95, ADR-0020)", () => {
+  /** The anon session captured before sign-in, and the permanent session
+   *  `signInWithPassword` returns on success. */
+  const anonSession = { user: { id: "anon-1", is_anonymous: true } } as never;
+  const permanentSession = {
+    user: { id: "perm-1", email: "ada@example.com" },
+  } as never;
+
+  beforeEach(() => {
+    signInWithPassword.mockReset();
+    getSession.mockReset();
+    setSession.mockReset();
+    window.localStorage.clear();
+    // getSession returns the saved anon session by default (verify-then-clean).
+    getSession.mockResolvedValue({ data: { session: anonSession } });
+    setSession.mockResolvedValue({ data: {}, error: null });
+    useAppStore.setState({
+      restoreStatus: "idle",
+      restoreError: null,
+      session: anonSession,
+      repo: null,
+      currentRoom: null,
+      restorableRooms: [],
+    });
+  });
+
+  it("on a wrong password: flips to error, deletes nothing, leaves guest data intact", async () => {
+    signInWithPassword.mockResolvedValue({
+      data: { session: null },
+      error: new Error("Invalid login credentials"),
+    });
+    const deleteRoomsForOwner = vi.fn();
+    const repo = { deleteRoomsForOwner } as unknown as CanvasRepository;
+    useAppStore.setState({ repo });
+
+    await useAppStore
+      .getState()
+      .restoreWithPassword("ada@example.com", "wrong-password");
+
+    expect(useAppStore.getState().restoreStatus).toBe("error");
+    expect(useAppStore.getState().restoreError).toBe(
+      "Invalid login credentials",
+    );
+    // No cleanup ran — the anon session was never swapped away.
+    expect(deleteRoomsForOwner).not.toHaveBeenCalled();
+    expect(setSession).not.toHaveBeenCalled();
+    // The anon session is still the store's session: guest data is reachable.
+    expect(useAppStore.getState().session).toBe(anonSession);
+  });
+
+  it("on the correct password: cleans guest Rooms via the saved anon session, then auto-loads the single Room", async () => {
+    signInWithPassword.mockResolvedValue({
+      data: { session: permanentSession },
+      error: null,
+    });
+    const onlyRoom = { id: "room-1", name: "Studio" } as unknown as Room;
+    let deletedOwnerId: string | null = null;
+    let loadedRoomId: string | null = null;
+    const repo = {
+      async deleteRoomsForOwner(ownerId: string) {
+        deletedOwnerId = ownerId;
+      },
+      async listRooms() {
+        return [onlyRoom];
+      },
+      async listSurfaces(roomId: string) {
+        loadedRoomId = roomId;
+        return [{ id: "s1", owner_id: "perm-1" }];
+      },
+      async listNotes() {
+        return [];
+      },
+      async listAnnotations() {
+        return [];
+      },
+    } as unknown as CanvasRepository;
+    useAppStore.setState({ repo });
+
+    await useAppStore
+      .getState()
+      .restoreWithPassword("ada@example.com", "right-password");
+
+    // Cleanup deleted the ANON User's Rooms (verify-then-clean).
+    expect(deletedOwnerId).toBe("anon-1");
+    // Session was juggled: anon re-applied for the delete, then permanent.
+    expect(setSession).toHaveBeenNthCalledWith(1, anonSession);
+    expect(setSession).toHaveBeenNthCalledWith(2, permanentSession);
+    // Single Room auto-loaded; store session is now permanent.
+    expect(loadedRoomId).toBe("room-1");
+    expect(useAppStore.getState().currentRoom?.id).toBe("room-1");
+    expect(useAppStore.getState().session).toBe(permanentSession);
+    expect(useAppStore.getState().restoreStatus).toBe("done");
+    expect(window.localStorage.getItem("bn.auth-intent")).toBeNull();
+  });
+
+  it("on the correct password with >1 Room: flips to 'selecting' with the candidates", async () => {
+    signInWithPassword.mockResolvedValue({
+      data: { session: permanentSession },
+      error: null,
+    });
+    const candidates = [
+      { id: "a", name: "Studio" } as unknown as Room,
+      { id: "b", name: "Workshop" } as unknown as Room,
+    ];
+    const repo = {
+      async deleteRoomsForOwner() {},
+      async listRooms() {
+        return candidates;
+      },
+    } as unknown as CanvasRepository;
+    useAppStore.setState({ repo });
+
+    await useAppStore
+      .getState()
+      .restoreWithPassword("ada@example.com", "right-password");
+
+    expect(useAppStore.getState().restoreStatus).toBe("selecting");
+    expect(useAppStore.getState().restorableRooms).toEqual(candidates);
+    expect(useAppStore.getState().currentRoom).toBeNull();
+  });
+
+  it("on the correct password with 0 Rooms: flips to 'empty' without auto-creating", async () => {
+    signInWithPassword.mockResolvedValue({
+      data: { session: permanentSession },
+      error: null,
+    });
+    const insertRoom = vi.fn();
+    const repo = {
+      async deleteRoomsForOwner() {},
+      async listRooms() {
+        return [];
+      },
+      insertRoom,
+    } as unknown as CanvasRepository;
+    useAppStore.setState({ repo });
+
+    await useAppStore
+      .getState()
+      .restoreWithPassword("ada@example.com", "right-password");
+
+    expect(useAppStore.getState().restoreStatus).toBe("empty");
+    expect(useAppStore.getState().currentRoom).toBeNull();
+    expect(insertRoom).not.toHaveBeenCalled();
+  });
+
+  it("does not strand the User when the guest cleanup delete fails", async () => {
+    signInWithPassword.mockResolvedValue({
+      data: { session: permanentSession },
+      error: null,
+    });
+    const onlyRoom = { id: "room-1", name: "Studio" } as unknown as Room;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const repo = {
+      async deleteRoomsForOwner() {
+        throw new Error("delete blew up");
+      },
+      async listRooms() {
+        return [onlyRoom];
+      },
+      async listSurfaces() {
+        return [{ id: "s1", owner_id: "perm-1" }];
+      },
+      async listNotes() {
+        return [];
+      },
+      async listAnnotations() {
+        return [];
+      },
+    } as unknown as CanvasRepository;
+    useAppStore.setState({ repo });
+
+    await useAppStore
+      .getState()
+      .restoreWithPassword("ada@example.com", "right-password");
+
+    // The delete failure is logged but the permanent session is still
+    // applied (finally) and the Room still loads — no stranding.
+    expect(warn).toHaveBeenCalled();
+    expect(setSession).toHaveBeenNthCalledWith(2, permanentSession);
+    expect(useAppStore.getState().currentRoom?.id).toBe("room-1");
+    expect(useAppStore.getState().restoreStatus).toBe("done");
+    warn.mockRestore();
   });
 });
