@@ -347,6 +347,17 @@ export function App() {
   // two returns apart via the intent flag is the crux of ADR-0019.
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      // Password-recovery return (issue #96, ADR-0020): Supabase fires
+      // PASSWORD_RECOVERY when the recovery link's hash is processed. Adopt
+      // the recovery session and flag the store so the Notebook opens its
+      // "Set a new password" page; `setNewPassword` finishes the flow with
+      // `updateUser({ password })`. Serves both forgotten-password users and
+      // legacy password-less Claimed users. Distinct from claim/restore.
+      if (event === "PASSWORD_RECOVERY" || getAuthIntent() === "recover") {
+        setSession(session);
+        useAppStore.setState({ recovering: true });
+        return;
+      }
       if (event !== "USER_UPDATED" && event !== "SIGNED_IN") return;
       const user = session?.user;
       if (!user || !user.email || user.is_anonymous) return;
