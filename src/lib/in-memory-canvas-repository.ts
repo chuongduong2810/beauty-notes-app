@@ -1,4 +1,7 @@
-import type { CanvasRepository } from "./canvas-repository";
+import type {
+  CanvasRepository,
+  RoomCustomizationPatch,
+} from "./canvas-repository";
 import {
   defaultSurfaces,
   DEFAULT_ROOM_WIDTH_M,
@@ -64,6 +67,8 @@ export class InMemoryCanvasRepository implements CanvasRepository {
       camera_yaw: DEFAULT_CAMERA_YAW,
       camera_pitch: DEFAULT_CAMERA_PITCH,
       camera_distance: DEFAULT_CAMERA_DISTANCE,
+      // Mirror the SQL default: no Customization yet ⇒ the default look.
+      furniture: [],
       created_at: now,
       updated_at: now,
     };
@@ -273,6 +278,22 @@ export class InMemoryCanvasRepository implements CanvasRepository {
       return updated;
     });
     if (!updated) throw new Error(`updateRoomCamera: no Room with id ${id}`);
+    return updated;
+  }
+
+  async updateRoomCustomization(
+    roomId: string,
+    patch: RoomCustomizationPatch,
+  ): Promise<Room> {
+    let updated: Room | null = null;
+    this.rooms = this.rooms.map((r) => {
+      if (r.id !== roomId) return r;
+      updated = { ...r, ...patch, updated_at: new Date().toISOString() };
+      return updated;
+    });
+    if (!updated) {
+      throw new Error(`updateRoomCustomization: no Room with id ${roomId}`);
+    }
     return updated;
   }
 }

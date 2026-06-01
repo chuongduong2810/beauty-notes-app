@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CanvasRepository } from "./canvas-repository";
+import type {
+  CanvasRepository,
+  RoomCustomizationPatch,
+} from "./canvas-repository";
 import {
   defaultSurfaces,
   type Room,
@@ -94,6 +97,17 @@ export function supabaseCanvasRepository(
           camera_distance: distance,
         })
         .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Room;
+    },
+
+    async updateRoomCustomization(roomId, patch: RoomCustomizationPatch) {
+      const { data, error } = await supabase
+        .from("rooms")
+        .update(patch)
+        .eq("id", roomId)
         .select()
         .single();
       if (error) throw error;
