@@ -57,3 +57,16 @@ export function claimRedirectUrl(roomId: string, origin: string): string {
 export function restoreRedirectUrl(origin: string): string {
   return origin + "/";
 }
+
+/**
+ * Build the return URL for a password-recovery email (ADR-0020): the app
+ * origin root, where the `PASSWORD_RECOVERY` event lands so the set-new-password
+ * page can run `updateUser({ password })`. Mirrors {@link restoreRedirectUrl} —
+ * recovery, like Restore, can happen on a fresh device with no Room loaded.
+ *
+ * @param origin - the page origin, e.g. `window.location.origin`.
+ * @returns `${origin}/` — the app root.
+ */
+export function resetPasswordRedirectUrl(origin: string): string {
+  return origin + "/";
+}
