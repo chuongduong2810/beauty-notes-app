@@ -13,6 +13,7 @@ import {
   type NotebookSectionKey,
 } from "../lib/notebook-sections";
 import { buildRoomLedger } from "../lib/room-ledger";
+import { isValidPassword, PASSWORD_HINT } from "../lib/password";
 import type { Room } from "../lib/room";
 import { paletteEntry } from "../lib/palette";
 import { useAppStore } from "../store";
@@ -26,7 +27,7 @@ import { HoverTooltip } from "./HoverTooltip";
 type OwnershipStoreSlice = {
   claimStatus: "idle" | "sending" | "sent" | "claimed" | "error";
   claimError: string | null;
-  claimRoom: (email: string) => Promise<void>;
+  claimRoom: (email: string, password: string) => Promise<void>;
   resetClaim: () => void;
 };
 
@@ -214,6 +215,11 @@ function NotebookSpread({
 
   const [email, setEmail] = useState("");
   const emailValid = email.trim().length > 0 && email.includes("@");
+  // Claim now also sets a Password (issue #94, ADR-0020) so the Room can
+  // be Restored instantly without an email later. Validated against the
+  // #93 policy helper; the CTA stays disabled until both fields are valid.
+  const [password, setPassword] = useState("");
+  const passwordValid = isValidPassword(password);
   // Consent gate for the guest-cleanup that Restore performs (issue #84,
   // ADR-0019): reopening a claimed room signs this device out of its guest
   // identity, so any rooms made here as a guest are cleared. The user must
@@ -255,8 +261,8 @@ function NotebookSpread({
   };
 
   const submitClaim = () => {
-    if (!emailValid || claimStatus === "sending") return;
-    void claimRoom(email.trim());
+    if (!emailValid || !passwordValid || claimStatus === "sending") return;
+    void claimRoom(email.trim(), password);
   };
 
   const submitRestore = () => {
@@ -844,24 +850,33 @@ function NotebookSpread({
               if (e.key === "Enter") submitClaim();
             }}
           />
-          <p className="nb-claim__hint">
-            A magic letter will be sent to your mailbox.
-          </p>
+          <label className="nb-field__label">Password</label>
+          <input
+            type="password"
+            className="nb-field__input"
+            placeholder="••••••••"
+            value={password}
+            autoComplete="new-password"
+            spellCheck={false}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitClaim();
+            }}
+          />
+          <p className="nb-claim__hint">{PASSWORD_HINT}</p>
           {claimStatus === "error" && claimError && (
             <div className="notebook-claim__error">{claimError}</div>
           )}
           <button
             type="button"
             className="nb-claim__cta"
-            disabled={!emailValid}
+            disabled={!emailValid || !passwordValid}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={submitClaim}
           >
             Sign &amp; Claim
           </button>
-          <p className="nb-claim__sig">
-            Your room. Your thoughts. Your ownership.
-          </p>
         </div>
       );
     }
