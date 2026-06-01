@@ -35,6 +35,24 @@ function useOwnershipStore<T>(selector: (slice: OwnershipStoreSlice) => T): T {
 }
 
 /**
+ * Room-restore slice of the app store (issue #82 — the "restore my room"
+ * magic-link flow, ADR-0019). The inverse of the ownership/claim slice
+ * above: bringing a Claimed Room back onto a fresh device. Consumed
+ * read-only here. Field/method names match the #82 contract verbatim.
+ */
+type RestoreStoreSlice = {
+  restoreStatus: "idle" | "sending" | "sent" | "restoring" | "done" | "error";
+  restoreError: string | null;
+  sendRestoreLink: (email: string) => Promise<void>;
+  resetRestore: () => void;
+};
+
+/** Read the restore slice off the store with the contract types. */
+function useRestoreStore<T>(selector: (slice: RestoreStoreSlice) => T): T {
+  return useAppStore((s) => selector(s as unknown as RestoreStoreSlice));
+}
+
+/**
  * Which spread the open Notebook is showing (redesign per the 4-stage
  * ownership flow). The three Note sections + the Room Ledger are "browse"
  * spreads (tabs on the left page); `claim` and `certificate` are
@@ -44,6 +62,7 @@ type NotebookView =
   | NotebookSectionKey
   | "ledger"
   | "claim"
+  | "restore"
   | "certificate";
 
 const BROWSE_VIEWS = new Set<NotebookView>([
@@ -163,6 +182,10 @@ function NotebookSpread({
   const claimError = useOwnershipStore((s) => s.claimError);
   const claimRoom = useOwnershipStore((s) => s.claimRoom);
   const resetClaim = useOwnershipStore((s) => s.resetClaim);
+  const restoreStatus = useRestoreStore((s) => s.restoreStatus);
+  const restoreError = useRestoreStore((s) => s.restoreError);
+  const sendRestoreLink = useRestoreStore((s) => s.sendRestoreLink);
+  const resetRestore = useRestoreStore((s) => s.resetRestore);
 
   const isGuest = session?.user.is_anonymous ?? true;
   const claimed = !isGuest;
@@ -216,14 +239,20 @@ function NotebookSpread({
     void claimRoom(email.trim());
   };
 
+  const submitRestore = () => {
+    if (!emailValid || restoreStatus === "sending") return;
+    void sendRestoreLink(email.trim());
+  };
+
   const backToRoom = () => {
     resetClaim();
+    resetRestore();
     onClose();
   };
 
   // Re-mounts both pages on any view/stage change so the page-turn
   // animation replays.
-  const turnKey = `${view}:${claimStatus}`;
+  const turnKey = `${view}:${claimStatus}:${restoreStatus}`;
 
   if (!front) return null;
 
@@ -343,14 +372,27 @@ function NotebookSpread({
               View Certificate <span aria-hidden="true">→</span>
             </button>
           ) : (
-            <button
-              type="button"
-              className="nb-ledger__claim"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => setView("claim")}
-            >
-              Claim This Room <span aria-hidden="true">→</span>
-            </button>
+            <>
+              <button
+                type="button"
+                className="nb-ledger__claim"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => setView("claim")}
+              >
+                Claim This Room <span aria-hidden="true">→</span>
+              </button>
+              {/* Guest-only Restore entry (issue #82, ADR-0019): reopen a
+                  previously Claimed Room on this fresh device. */}
+              <button
+                type="button"
+                className="nb-ledger__restore"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => setView("restore")}
+              >
+                Already have a room? Restore it{" "}
+                <span aria-hidden="true">→</span>
+              </button>
+            </>
           )}
         </>
       );
@@ -434,6 +476,105 @@ function NotebookSpread({
         <p className="nb-cert__sig">Your thoughts. Your space. Forever yours.</p>
       </>
     );
+  } else if (view === "restore") {
+    // ── Restore flow (full spread, issue #82 / ADR-0019): stage 2 form,
+    // or stage 3 letter sent. Mirrors the Claim spread's structure. ─────
+    const sent = restoreStatus === "sent" || restoreStatus === "sending";
+    if (sent) {
+      leftBody = (
+        <div className="nb-claim-left nb-sent-left">
+          <p className="nb-sent-left__title">
+            Sending
+            <br />
+            your letter…
+          </p>
+          <span className="nb-sent-left__env" aria-hidden="true">✉️</span>
+          <span className="nb-sent-left__spark" aria-hidden="true">✦</span>
+        </div>
+      );
+      rightBody = (
+        <div className="nb-flow-right">
+          <div className="notebook-page__title">Letter Sent</div>
+          <p className="nb-sent__copy">
+            If a room is registered to this email, a letter is on its way to:
+          </p>
+          <p className="nb-sent__email">{email || "your inbox"}</p>
+          <p className="nb-sent__hint">
+            ✉ Check your inbox and follow the link inside to reopen your room.
+          </p>
+          <button
+            type="button"
+            className="nb-back"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={backToRoom}
+          >
+            ← Back to Room
+          </button>
+        </div>
+      );
+    } else {
+      leftBody = (
+        <div className="nb-claim-left">
+          <div className="nb-claim-left__title">
+            Restore
+            <br />
+            Your Room
+          </div>
+          <div className="nb-claim-left__rule" />
+          <p className="nb-claim-left__copy">
+            Reopen a room you&apos;ve already claimed — its notes, layout,
+            and view, just as you left them.
+          </p>
+          <div className="nb-deco">
+            <span className="nb-deco__key" aria-hidden="true">🗝️</span>
+            <span className="nb-deco__seal" aria-hidden="true">🚪</span>
+            <span className="nb-deco__tag">Restore</span>
+          </div>
+        </div>
+      );
+      rightBody = (
+        <div className="nb-flow-right">
+          <div className="notebook-page__title">Reopen Your Room</div>
+          <label className="nb-field__label">Email Address</label>
+          <input
+            type="email"
+            className="nb-field__input"
+            placeholder="you@example.com"
+            value={email}
+            autoComplete="email"
+            spellCheck={false}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitRestore();
+            }}
+          />
+          <p className="nb-claim__hint">
+            A magic letter will be sent to your mailbox.
+          </p>
+          {restoreStatus === "error" && restoreError && (
+            <div className="notebook-claim__error">{restoreError}</div>
+          )}
+          <button
+            type="button"
+            className="nb-claim__cta"
+            disabled={!emailValid}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={submitRestore}
+          >
+            Send Magic Link
+          </button>
+          <button
+            type="button"
+            className="nb-back"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={backToRoom}
+          >
+            ← Back to Room
+          </button>
+        </div>
+      );
+    }
   } else {
     // ── Claim flow (full spread): stage 2 form, or stage 3 letter sent ─
     const sent = claimStatus === "sent" || claimStatus === "sending";

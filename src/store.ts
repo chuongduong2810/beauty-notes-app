@@ -13,7 +13,8 @@ import {
   type Tool,
 } from "./lib/pen-tool";
 import { loadRoom } from "./lib/load-room";
-import { claimRedirectUrl } from "./lib/ownership";
+import { clearAuthIntent, setAuthIntent } from "./lib/auth-intent";
+import { claimRedirectUrl, restoreRedirectUrl } from "./lib/ownership";
 import type { ScreenRect } from "./lib/project-note-rect";
 import { roomPath } from "./lib/room-route";
 import { supabase } from "./lib/supabase";
@@ -110,6 +111,29 @@ type CameraPose = {
  */
 type ClaimStatus = "idle" | "sending" | "sent" | "claimed" | "error";
 
+/**
+ * Lifecycle of "restoring a Room" — bringing a previously Claimed
+ * account's Room back onto a fresh device via a magic link that signs
+ * the device *into* the existing permanent account (issue #82, ADR-0019).
+ * Restore is the inverse of Claim: `signInWithOtp` (a session swap), not
+ * `updateUser` (an in-place promotion).
+ *  - "idle": nothing in flight (initial).
+ *  - "sending": the `signInWithOtp` call is awaiting Supabase.
+ *  - "sent": the magic link has been emailed; awaiting the User's click.
+ *  - "restoring": the magic-link return is being handled — listing the
+ *    now-permanent account's Rooms and loading the single one.
+ *  - "done": the return has been fully handled.
+ *  - "error": the send failed; see `restoreError`.
+ * The Notebook restore UI codes against these exact names.
+ */
+type RestoreStatus =
+  | "idle"
+  | "sending"
+  | "sent"
+  | "restoring"
+  | "done"
+  | "error";
+
 type AppState = {
   session: Session | null;
   repo: CanvasRepository | null;
@@ -119,6 +143,11 @@ type AppState = {
   claimStatus: ClaimStatus;
   /** Human-readable failure reason when `claimStatus === "error"`. */
   claimError: string | null;
+
+  /** Current stage of the Room-restore flow (issue #82, ADR-0019). */
+  restoreStatus: RestoreStatus;
+  /** Human-readable failure reason when `restoreStatus === "error"`. */
+  restoreError: string | null;
   /** True while a Room switch / create is in flight. Drives the
    *  small "Loading Room" overlay (#22). Distinct from `ready` so
    *  the full SplashScreen only shows during initial bootstrap. */
@@ -196,6 +225,27 @@ type AppState = {
   /** Reset the claim flow back to "idle" and clear any error — used when
    *  reopening the claim page (issue #70). */
   resetClaim: () => void;
+  /**
+   * Send a Restore magic link (issue #82, ADR-0019). Signs the device
+   * *into* the existing permanent account via
+   * `signInWithOtp({ shouldCreateUser: false })` — the inverse of Claim's
+   * `updateUser`. Records the auth-intent as "restore" BEFORE sending so
+   * the magic-link return is handled as a Restore, not a Claim. Flips
+   * `restoreStatus` "sending" → "sent" on success, or "error" (+
+   * `restoreError`) on failure. No-op outside the DOM. The redirect
+   * targets the app origin root, not a Room — a fresh device can't know
+   * which Room to land on (ADR-0019). */
+  sendRestoreLink: (email: string) => Promise<void>;
+  /**
+   * Handle a Restore magic-link return (issue #82, ADR-0019). The device
+   * session is now the permanent account; this lists its Rooms and, for
+   * the single-room case, loads the one Room via the existing room-load
+   * path. Multi-room / zero-room routing is out of this slice (issues
+   * #83 / #85). Clears the auth-intent when done. */
+  completeRestore: () => Promise<void>;
+  /** Reset the restore flow back to "idle" and clear any error — used when
+   *  reopening the restore page (issue #82). */
+  resetRestore: () => void;
   setRoom: (
     room: Room,
     surfaces: Surface[],
@@ -252,6 +302,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   claimStatus: "idle",
   claimError: null,
 
+  restoreStatus: "idle",
+  restoreError: null,
+
   currentRoom: null,
   rooms: [],
   surfaces: [],
@@ -303,6 +356,52 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   resetClaim: () => set({ claimStatus: "idle", claimError: null }),
+
+  sendRestoreLink: async (email) => {
+    // Need a DOM `window.location.origin` to build the redirect from.
+    if (typeof window === "undefined") return;
+    set({ restoreStatus: "sending", restoreError: null });
+    try {
+      // Record the intent BEFORE sending so the magic-link return (which
+      // fires the same onAuthStateChange as Claim) is handled as a
+      // Restore, not a Claim (ADR-0019).
+      setAuthIntent("restore");
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: false,
+          emailRedirectTo: restoreRedirectUrl(window.location.origin),
+        },
+      });
+      if (error) throw error;
+      // guest cleanup: issue #83
+      set({ restoreStatus: "sent" });
+    } catch (err) {
+      set({
+        restoreStatus: "error",
+        restoreError: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+
+  completeRestore: async () => {
+    const { repo, session } = get();
+    const userId = session?.user.id;
+    if (!repo || !userId) return;
+    set({ restoreStatus: "restoring", restoreError: null });
+    const rooms = await repo.listRooms(userId);
+    // Single-room case only (this slice): fly straight into the one Room
+    // via the existing room-load path (switchRoom). 0 or >1 Rooms are
+    // out of scope here — issue #83 (multi) / #85 (zero).
+    if (rooms.length === 1) {
+      await get().switchRoom(rooms[0].id);
+    }
+    set({ restoreStatus: "done" });
+    clearAuthIntent();
+  },
+
+  resetRestore: () => set({ restoreStatus: "idle", restoreError: null }),
+
   setRoom: (room, surfaces, notes, annotations) =>
     set({
       currentRoom: room,

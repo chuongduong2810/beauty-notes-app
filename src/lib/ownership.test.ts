@@ -1,6 +1,10 @@
 import type { Session } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
-import { claimRedirectUrl, ownershipFromSession } from "./ownership";
+import {
+  claimRedirectUrl,
+  ownershipFromSession,
+  restoreRedirectUrl,
+} from "./ownership";
 
 /**
  * Minimal Session stub for the ownership derivations. We only read
@@ -62,6 +66,14 @@ describe("claimRedirectUrl (issue #70)", () => {
   it("joins the origin with the canonical Room route", () => {
     expect(claimRedirectUrl("abc-123", "https://notes.example.com")).toBe(
       "https://notes.example.com/room/abc-123",
+    );
+  });
+});
+
+describe("restoreRedirectUrl (issue #82)", () => {
+  it("returns the app origin root, not a per-Room route", () => {
+    expect(restoreRedirectUrl("https://notes.example.com")).toBe(
+      "https://notes.example.com/",
     );
   });
 });
