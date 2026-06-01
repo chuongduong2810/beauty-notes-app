@@ -86,16 +86,16 @@ describe("store — claimRoom / resetClaim (issue #70)", () => {
     });
   });
 
-  it("flips sending → sent and sends a magic link to the Room route", async () => {
+  it("flips sending → sent and sets email + password with a magic link to the Room route", async () => {
     updateUser.mockResolvedValue({ data: {}, error: null });
     useAppStore.setState({ currentRoom: makeRoom() });
 
-    await useAppStore.getState().claimRoom("ada@example.com");
+    await useAppStore.getState().claimRoom("ada@example.com", "hunter2!secret");
 
     expect(useAppStore.getState().claimStatus).toBe("sent");
     expect(useAppStore.getState().claimError).toBeNull();
     expect(updateUser).toHaveBeenCalledWith(
-      { email: "ada@example.com" },
+      { email: "ada@example.com", password: "hunter2!secret" },
       {
         emailRedirectTo: `${window.location.origin}/room/room-1`,
       },
@@ -106,14 +106,14 @@ describe("store — claimRoom / resetClaim (issue #70)", () => {
     updateUser.mockResolvedValue({ data: {}, error: new Error("rate limited") });
     useAppStore.setState({ currentRoom: makeRoom() });
 
-    await useAppStore.getState().claimRoom("ada@example.com");
+    await useAppStore.getState().claimRoom("ada@example.com", "hunter2!secret");
 
     expect(useAppStore.getState().claimStatus).toBe("error");
     expect(useAppStore.getState().claimError).toBe("rate limited");
   });
 
   it("no-ops with no current Room", async () => {
-    await useAppStore.getState().claimRoom("ada@example.com");
+    await useAppStore.getState().claimRoom("ada@example.com", "hunter2!secret");
 
     expect(updateUser).not.toHaveBeenCalled();
     expect(useAppStore.getState().claimStatus).toBe("idle");

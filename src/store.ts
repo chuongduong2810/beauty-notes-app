@@ -269,13 +269,20 @@ type AppState = {
   setRepo: (repo: CanvasRepository) => void;
   /**
    * Claim the current Room by promoting the anonymous User to a
-   * permanent email account (issue #70, ADR-0018). Sends a magic link
-   * via `updateUser({ email })` — the UUID is preserved so there is NO
-   * data migration. Flips `claimStatus` "sending" → "sent" on success,
-   * or "error" (+ `claimError`) on failure. No-op outside the DOM or
-   * with no current Room.
+   * permanent email account (issue #70, ADR-0018). Sets the account's
+   * email *and password* via `updateUser({ email, password })` so the
+   * Room can later be Restored instantly without an email (issue #94,
+   * ADR-0020). "Confirm email" stays ON, so this still sends one
+   * verification magic link; the UUID is preserved so there is NO data
+   * migration. Flips `claimStatus` "sending" → "sent" on success, or
+   * "error" (+ `claimError`) on failure. No-op outside the DOM or with
+   * no current Room.
+   *
+   * @param email - the permanent account email the User typed.
+   * @param password - the new password (validated ≥ 8 chars client-side,
+   *   per ADR-0020; Supabase enforces the same floor server-side).
    */
-  claimRoom: (email: string) => Promise<void>;
+  claimRoom: (email: string, password: string) => Promise<void>;
   /** Reset the claim flow back to "idle" and clear any error — used when
    *  reopening the claim page (issue #70). */
   resetClaim: () => void;
@@ -393,7 +400,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSession: (session) => set({ session }),
   setRepo: (repo) => set({ repo }),
 
-  claimRoom: async (email) => {
+  claimRoom: async (email, password) => {
     const { currentRoom } = get();
     // Need a Room to return to (the magic-link redirect target) and a
     // DOM `window.location.origin` to build it from.
@@ -401,7 +408,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ claimStatus: "sending", claimError: null });
     try {
       const { error } = await supabase.auth.updateUser(
-        { email },
+        { email, password },
         {
           emailRedirectTo: claimRedirectUrl(
             currentRoom.id,
