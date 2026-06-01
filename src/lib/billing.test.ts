@@ -71,27 +71,28 @@ describe("getBillingProvider selection (issue #106, ADR-0023)", () => {
 describe("stripeBillingProvider (issue #106, ADR-0023)", () => {
   beforeEach(() => {
     invokeMock.mockReset();
-    useAppStore.setState({ currentRoom: { id: "room-9" } as never });
+    useAppStore.setState({ checkoutClientSecret: null });
   });
 
-  it("invokes create-checkout-session with the tier + room and returns the url", async () => {
+  it("invokes create-checkout-session with the tier and opens the in-app modal", async () => {
     invokeMock.mockResolvedValue({
-      data: { url: "https://checkout.stripe.test/abc" },
+      data: { clientSecret: "cs_test_abc123" },
       error: null,
     });
 
-    const result = await stripeBillingProvider.startCheckout("studio");
+    await stripeBillingProvider.startCheckout("studio");
 
     expect(invokeMock).toHaveBeenCalledWith(
       "create-checkout-session",
       expect.objectContaining({
-        body: expect.objectContaining({ tier: "studio", roomId: "room-9" }),
+        body: expect.objectContaining({ tier: "studio" }),
       }),
     );
-    expect(result).toEqual({ url: "https://checkout.stripe.test/abc" });
+    // Opens the Embedded Checkout modal via the store, no redirect.
+    expect(useAppStore.getState().checkoutClientSecret).toBe("cs_test_abc123");
   });
 
-  it("throws when the Edge Function returns no url", async () => {
+  it("throws when the Edge Function returns no client secret", async () => {
     invokeMock.mockResolvedValue({ data: {}, error: null });
     await expect(stripeBillingProvider.startCheckout("resident")).rejects.toThrow();
   });

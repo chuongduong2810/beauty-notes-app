@@ -359,19 +359,14 @@ function NotebookSpread({
   // The User's current Plan, marked on the Membership page (ADR-0021).
   const currentTier: Tier = tierFromMembership(membership);
 
-  // Upgrade to a paid Plan (issue #105): run the billing seam. The real
-  // provider (#106) resolves with a hosted-checkout `{ url }` to redirect to
-  // (entitlements then refresh on the return-to-room bootstrap). The mock
-  // provider updates the store's membership + entitlements synchronously and
-  // resolves with no redirect — so we simply STAY on the Membership page and
-  // the chosen Plan now shows as active. We deliberately do NOT close the
-  // notebook (that slammed the book shut on click) and do NOT re-read the
-  // membership here: the mock never writes the DB, so a re-read would revert
-  // the optimistic upgrade back to Explorer.
-  // Which paid Plan's checkout is in flight, so the "Move in" buttons show a
-  // loading state (the real provider does an async round-trip to the Edge
-  // Function before redirecting). Cleared on the mock's in-process resolve or
-  // on error; the real path navigates away so it never needs clearing.
+  // Upgrade to a paid Plan (issue #105/#106): run the billing seam. The real
+  // provider opens the in-app Embedded Checkout modal (App renders it from the
+  // store's `checkoutClientSecret`); the mock flips membership + entitlements
+  // in place. Either way `startCheckout` resolves with no value and the
+  // notebook stays open — we just clear the button's loading state.
+  //
+  // `checkoutTier` tracks which paid Plan's checkout is in flight so the
+  // "Move in" buttons can show a loading state during the async round-trip.
   const [checkoutTier, setCheckoutTier] = useState<Exclude<
     Tier,
     "explorer"
@@ -381,14 +376,8 @@ function NotebookSpread({
     setCheckoutTier(tier);
     void getBillingProvider()
       .startCheckout(tier)
-      .then((result) => {
-        if (result && typeof window !== "undefined") {
-          window.location.assign(result.url);
-          return; // redirecting away — keep the loading state
-        }
-        setCheckoutTier(null);
-      })
-      .catch(() => setCheckoutTier(null));
+      .catch((err) => console.warn("startCheckout failed", err))
+      .finally(() => setCheckoutTier(null));
   };
 
   const backToRoom = () => {

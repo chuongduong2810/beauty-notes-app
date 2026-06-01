@@ -36,11 +36,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { tier, roomId, origin } = (await req.json()) as {
-      tier: PaidTier;
-      roomId: string;
-      origin: string;
-    };
+    const { tier } = (await req.json()) as { tier: PaidTier };
     const price = PRICE_BY_TIER[tier];
     if (!price) {
       return new Response(JSON.stringify({ error: `unknown tier: ${tier}` }), {
@@ -49,25 +45,29 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Return to the same Room the User upgraded from (brief: "Return to Room").
-    const returnUrl = `${origin}/room/${roomId}`;
     // Anonymous (guest) Users have an empty/absent email — `??` would let an
     // empty string through and Stripe rejects "Invalid email address: ". Only
     // prefill when it's a real address; otherwise Checkout collects one.
     const email =
       user.email && user.email.includes("@") ? user.email : undefined;
+    // Embedded Checkout: rendered in an iframe inside our app (no redirect).
+    // `redirect_on_completion: "never"` keeps the User in the Room — the
+    // client closes the modal + refreshes Membership on the onComplete event;
+    // the subscription is recorded by the webhook regardless.
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
+      ui_mode: "embedded",
+      redirect_on_completion: "never",
       line_items: [{ price, quantity: 1 }],
-      success_url: returnUrl,
-      cancel_url: returnUrl,
       // The webhook reads these to attribute the subscription to the owner.
       client_reference_id: user.id,
       customer_email: email,
       subscription_data: { metadata: { owner_id: user.id } },
     });
 
-    return new Response(JSON.stringify({ url: session.url }), { headers: jsonHeaders });
+    return new Response(JSON.stringify({ clientSecret: session.client_secret }), {
+      headers: jsonHeaders,
+    });
   } catch (e) {
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),

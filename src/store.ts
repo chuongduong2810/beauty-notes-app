@@ -310,6 +310,11 @@ type AppState = {
   /** Capabilities derived purely from the current Membership's tier
    *  (ADR-0021). Absent/expired Membership ⇒ Explorer (free) entitlements. */
   entitlements: Entitlements;
+  /** Stripe Embedded Checkout session client_secret while the in-app payment
+   *  modal is open, else null. Set by the real billing provider; the modal
+   *  (CheckoutModal) renders Stripe's iframe from it and clears it on
+   *  close/complete (ADR-0023). */
+  checkoutClientSecret: string | null;
 
   /** Current stage of the Room-claim flow (issue #70). */
   claimStatus: ClaimStatus;
@@ -411,6 +416,8 @@ type AppState = {
    * without a repo + session.
    */
   refreshMembership: () => Promise<void>;
+  /** Close the in-app Stripe Checkout modal (clears `checkoutClientSecret`). */
+  closeCheckout: () => void;
   /**
    * Claim the current Room by promoting the anonymous User to a
    * permanent email account (issue #70, ADR-0018). Sets the account's
@@ -597,6 +604,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   ready: false,
   membership: null,
   entitlements: entitlementsForTier("explorer"),
+  checkoutClientSecret: null,
   switchingRoom: false,
 
   claimStatus: "idle",
@@ -651,6 +659,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.warn("refreshMembership failed", err);
     }
   },
+
+  closeCheckout: () => set({ checkoutClientSecret: null }),
 
   claimRoom: async (email, password) => {
     const { currentRoom } = get();

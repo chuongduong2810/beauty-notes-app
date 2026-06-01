@@ -23,6 +23,7 @@ import { OrbitRadiusKeeper } from "./components/OrbitRadiusKeeper";
 import { RoomPicker } from "./components/RoomPicker";
 import { RoomSwitchingOverlay } from "./components/RoomSwitchingOverlay";
 import { SearchOverlay } from "./components/SearchOverlay";
+import { CheckoutModal } from "./components/CheckoutModal";
 import { ToolPalette } from "./components/ToolPalette";
 import { getAuthIntent } from "./lib/auth-intent";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
@@ -603,6 +604,7 @@ export function App() {
       <ToolPalette />
       <SearchOverlay flyToNote={flyToNote} />
       <RoomSwitchingOverlay />
+      <CheckoutModal />
       <SplashScreen />
     </div>
   );
