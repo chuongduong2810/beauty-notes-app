@@ -770,6 +770,15 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      /* Room rows on the "Your Rooms" restore page reuse the note-entry
+         layout but show a door glyph instead of a colour swatch (issue #83). */
+      .nb-room-swatch {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(231, 168, 64, 0.18);
+        font-size: 13px;
+      }
       .notebook-entry__time {
         flex: 0 0 auto;
         font-size: 12px;

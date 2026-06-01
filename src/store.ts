@@ -122,6 +122,9 @@ type ClaimStatus = "idle" | "sending" | "sent" | "claimed" | "error";
  *  - "sent": the magic link has been emailed; awaiting the User's click.
  *  - "restoring": the magic-link return is being handled — listing the
  *    now-permanent account's Rooms and loading the single one.
+ *  - "selecting": the account owns more than one Room — the Notebook is
+ *    showing the "Your Rooms" selection page (issue #83). `restorableRooms`
+ *    holds the candidates.
  *  - "done": the return has been fully handled.
  *  - "error": the send failed; see `restoreError`.
  * The Notebook restore UI codes against these exact names.
@@ -131,6 +134,7 @@ type RestoreStatus =
   | "sending"
   | "sent"
   | "restoring"
+  | "selecting"
   | "done"
   | "error";
 
@@ -148,6 +152,12 @@ type AppState = {
   restoreStatus: RestoreStatus;
   /** Human-readable failure reason when `restoreStatus === "error"`. */
   restoreError: string | null;
+  /**
+   * Candidate Rooms for the "Your Rooms" selection page (issue #83), set
+   * when a restore return finds more than one Room. Drives the Notebook's
+   * `selecting`-state list; cleared once a Room is chosen or the flow resets.
+   */
+  restorableRooms: Room[];
   /** True while a Room switch / create is in flight. Drives the
    *  small "Loading Room" overlay (#22). Distinct from `ready` so
    *  the full SplashScreen only shows during initial bootstrap. */
@@ -240,9 +250,16 @@ type AppState = {
    * Handle a Restore magic-link return (issue #82, ADR-0019). The device
    * session is now the permanent account; this lists its Rooms and, for
    * the single-room case, loads the one Room via the existing room-load
-   * path. Multi-room / zero-room routing is out of this slice (issues
-   * #83 / #85). Clears the auth-intent when done. */
+   * path (`switchRoom`). For more than one Room it populates
+   * `restorableRooms` and flips to "selecting" so the Notebook shows the
+   * "Your Rooms" page (issue #83). The zero-room case is out of this slice
+   * (issue #85). Clears the auth-intent when done. */
   completeRestore: () => Promise<void>;
+  /**
+   * Restore into a chosen Room from the "Your Rooms" selection page (issue
+   * #83). Loads it via the existing room-load path (`switchRoom`), marks the
+   * restore flow "done", and clears the candidate list. */
+  restoreIntoRoom: (roomId: string) => Promise<void>;
   /** Reset the restore flow back to "idle" and clear any error — used when
    *  reopening the restore page (issue #82). */
   resetRestore: () => void;
@@ -304,6 +321,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   restoreStatus: "idle",
   restoreError: null,
+  restorableRooms: [],
 
   currentRoom: null,
   rooms: [],
@@ -390,17 +408,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!repo || !userId) return;
     set({ restoreStatus: "restoring", restoreError: null });
     const rooms = await repo.listRooms(userId);
-    // Single-room case only (this slice): fly straight into the one Room
-    // via the existing room-load path (switchRoom). 0 or >1 Rooms are
-    // out of scope here — issue #83 (multi) / #85 (zero).
+    // Single-room case: fly straight into the one Room via the existing
+    // room-load path (switchRoom). More than one Room: stash the candidates
+    // and flip to "selecting" so the Notebook shows the "Your Rooms" page
+    // (issue #83). The zero-room case is out of scope here — issue #85.
     if (rooms.length === 1) {
       await get().switchRoom(rooms[0].id);
+      set({ restoreStatus: "done" });
+    } else if (rooms.length > 1) {
+      set({ restorableRooms: rooms, restoreStatus: "selecting" });
+    } else {
+      set({ restoreStatus: "done" }); // issue #85 (zero rooms)
     }
-    set({ restoreStatus: "done" });
     clearAuthIntent();
   },
 
-  resetRestore: () => set({ restoreStatus: "idle", restoreError: null }),
+  restoreIntoRoom: async (roomId) => {
+    await get().switchRoom(roomId);
+    set({ restoreStatus: "done", restorableRooms: [] });
+  },
+
+  resetRestore: () =>
+    set({ restoreStatus: "idle", restoreError: null, restorableRooms: [] }),
 
   setRoom: (room, surfaces, notes, annotations) =>
     set({
