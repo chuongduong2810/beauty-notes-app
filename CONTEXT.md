@@ -70,7 +70,7 @@ A camera-and-render-tuning mode for cinematic captures: DOM overlays hidden, pos
 _Avoid_: Screenshot, capture, photo, snapshot
 
 **Window**:
-Fixed architectural set-dressing on a wall Surface through which the City and Weather are visible. Like the desk and lamp, it is decoration rendered in front of a Surface — *not* itself a Surface, not a seventh member of the six, and not persisted data. The wall Surface beneath stays whole, so Notes and Annotations may still be Pinned over the glass. (See ADR-0015.)
+Fixed architectural set-dressing on a wall Surface through which the City and Weather are visible. Like the desk and lamp, it is decoration rendered in front of a Surface — *not* itself a Surface, not a seventh member of the six, and not persisted data. The wall Surface beneath stays whole, so Notes and Annotations may still be Pinned over the glass. Its **Window Style** is now a per-Room **Customization** choice (ADR-0022), though the Window's role as set-dressing is unchanged. (See ADR-0015, ADR-0022.)
 _Avoid_: Opening, glass, viewport, portal
 
 **City**:
@@ -78,7 +78,7 @@ The skyline backdrop seen through a Window. It lives *outside* the Room's bounda
 _Avoid_: World, environment, skybox, background, scene
 
 **Weather**:
-The ambient, always-rainy mood of the City: falling rain outside the Window, rain streaks on the glass, and overcast light spilling into the Room. Weather is a fixed atmosphere, not user-configurable state and not persisted — there is one mood (calm rain), no forecast, no time-of-day.
+The ambient, always-rainy mood of the City: falling rain outside the Window, rain streaks on the glass, and overcast light spilling into the Room. Weather is a fixed atmosphere, not user-configurable state and not persisted — there is one mood (calm rain), no forecast, no time-of-day. It is the baseline beneath the customizable **Ambience** layer (ADR-0022): Ambience is chosen by the User, Weather is not.
 _Avoid_: Climate, forecast, conditions
 
 **Notebook**:
@@ -92,3 +92,35 @@ _Avoid_: Dashboard, stats panel, summary, about page
 **Search**:
 A chrome utility that finds Notes by the text of their body and flies the Camera to the chosen one. Search is scoped to the **current Room** (the workspace is one Room — ADR-0008) and matches against the Note **body** only; the first non-empty line of the body is shown as the Note's title, since a Note has no separate title field. There are no Tags in v2, so "search by tag" is not offered. Choosing a result runs a Focus transition (the same cinematic fly-and-highlight used by a Note click and the Notebook), never an instant jump, and the result surfaces which Surface the Note is on so the User keeps spatial awareness. (See ADR-0017.)
 _Avoid_: Filter, query, find (ambiguous), tag search, lookup
+
+**Membership**:
+A User's standing in the subscription, at one of three **Plans**. Framed in the product as *belonging to a growing space*, never as a software licence or account plan. A Membership unlocks premium room experiences; it never gates note-taking, room ownership, the Notebook, or Restore — those are always free. Accessed from inside the Notebook. (See ADR-0021, ADR-0023.)
+_Avoid_: Subscription (the billing mechanism), licence, account plan, package
+
+**Plan**:
+One of the three tiers of **Membership**: **Explorer** (free), **Resident** (plus), **Studio** (premium). Each Plan grants a fixed set of **Entitlements**. "Tier" is an acceptable synonym in code; "Plan" is the product-facing word.
+_Avoid_: Level, package, subscription
+
+**Entitlement**:
+A capability a **Plan** grants — e.g. "apply premium furniture", "use Photo Mode", "create more than one Room". Entitlements are derived purely from the current Plan, not stored per User. When a Membership lapses the User drops to Explorer's Entitlements, but **never loses notes, Rooms, or ownership**: premium content they already have stays visible and becomes read-only. (See ADR-0021.)
+_Avoid_: Permission, feature flag, unlock, grant
+
+**Customization**:
+Personalizing a Room beyond its default look by applying **Catalog** Items — **Furniture**, **Theme**, **Lighting**, **Window Style**, **Ambience**. Customization is done *in the Room* (and via **Blueprint Mode**), never through a settings panel, and is persisted per Room. Locked (premium) Items stay visible with a lock rather than hidden. (See ADR-0022.)
+_Avoid_: Settings, preferences, decoration (one kind), skin
+
+**Catalog**:
+The in-code, curated set of all customization Items, grouped by kind, each tagged with the **Plan** it requires. Like the Palette, a Room stores Item *ids*, never raw values, so the Catalog can be retuned globally without migrating Room data. (See ADR-0022.)
+_Avoid_: Store, shop, inventory, library
+
+**Ambience**:
+A customizable ambient-mood preset applied to a Room — a chosen layer over the baseline **Weather**. Distinct from **Weather**, which is the single fixed rainy atmosphere (ADR-0015): Weather is the default mood; Ambience is the User's premium choice on top of it. (See ADR-0022.)
+_Avoid_: Weather (the fixed baseline), theme, mood (overloaded), vibe
+
+**Camera Viewpoint**:
+A User-saved Camera pose in a Room (yaw, pitch, distance) they can fly back to — a Resident Entitlement. Distinct from **Bookmark**, which flags a *Note*: a Viewpoint saves *where you stand*, a Bookmark marks *a note to keep handy*. They never mix. (See ADR-0021.)
+_Avoid_: Bookmark (the Note flag), camera bookmark, snapshot, waypoint
+
+**Blueprint Mode**:
+A top-down, orthographic plan view of the Room for arranging **Furniture** and **Customization** — a Studio Entitlement. The opposite of the immersive eye-level **Camera**: a god's-eye layout view, entered and exited explicitly. (See ADR-0021.)
+_Avoid_: Map, floor plan (the output), top view, editor
