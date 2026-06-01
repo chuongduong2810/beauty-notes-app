@@ -256,7 +256,6 @@ function NotebookSpread({
   const setNewPassword = useRestoreStore((s) => s.setNewPassword);
   const resetRecover = useRestoreStore((s) => s.resetRecover);
   const membership = useMembershipStore((s) => s.membership);
-  const refreshMembership = useMembershipStore((s) => s.refreshMembership);
 
   const isGuest = session?.user.is_anonymous ?? true;
   const claimed = !isGuest;
@@ -360,22 +359,22 @@ function NotebookSpread({
   // The User's current Plan, marked on the Membership page (ADR-0021).
   const currentTier: Tier = tierFromMembership(membership);
 
-  // Upgrade to a paid Plan (issue #105): run the billing seam, then return to
-  // the room with entitlements refreshed so newly unlocked customization
-  // appears immediately. The mock provider updates the store synchronously and
-  // resolves with no redirect; the real provider (#106) resolves with a
-  // checkout `{ url }` to redirect to. Calling `refreshMembership` on a void
-  // (mock) resolve is harmless — it re-reads the same state.
+  // Upgrade to a paid Plan (issue #105): run the billing seam. The real
+  // provider (#106) resolves with a hosted-checkout `{ url }` to redirect to
+  // (entitlements then refresh on the return-to-room bootstrap). The mock
+  // provider updates the store's membership + entitlements synchronously and
+  // resolves with no redirect — so we simply STAY on the Membership page and
+  // the chosen Plan now shows as active. We deliberately do NOT close the
+  // notebook (that slammed the book shut on click) and do NOT re-read the
+  // membership here: the mock never writes the DB, so a re-read would revert
+  // the optimistic upgrade back to Explorer.
   const choosePlan = (tier: Exclude<Tier, "explorer">) => {
     void getBillingProvider()
       .startCheckout(tier)
       .then((result) => {
         if (result && typeof window !== "undefined") {
           window.location.assign(result.url);
-          return;
         }
-        void refreshMembership();
-        onClose();
       });
   };
 
