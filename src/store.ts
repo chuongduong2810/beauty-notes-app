@@ -15,7 +15,11 @@ import {
 } from "./lib/pen-tool";
 import { loadRoom } from "./lib/load-room";
 import { clearAuthIntent, setAuthIntent } from "./lib/auth-intent";
-import { claimRedirectUrl, restoreRedirectUrl } from "./lib/ownership";
+import {
+  claimRedirectUrl,
+  resetPasswordRedirectUrl,
+  restoreRedirectUrl,
+} from "./lib/ownership";
 import type { ScreenRect } from "./lib/project-note-rect";
 import { roomPath } from "./lib/room-route";
 import { supabase } from "./lib/supabase";
@@ -210,6 +214,22 @@ type RestoreStatus =
   | "done"
   | "error";
 
+/**
+ * Lifecycle of the "set / reset password" flow (issue #96, ADR-0020) —
+ * the ONE flow that serves both users who forgot their password and legacy
+ * users who Claimed before passwords existed (so have none).
+ *  - "idle": nothing in flight (initial).
+ *  - "sending": the `resetPasswordForEmail` call is awaiting Supabase.
+ *  - "sent": the recovery email has been requested. Reached on success
+ *    REGARDLESS of whether the email maps to an account — the copy stays
+ *    neutral so we never reveal account existence (ADR-0020).
+ *  - "error": the send failed; see `recoverError`.
+ * The "Set a new password" page (driven by the `PASSWORD_RECOVERY` return)
+ * is its own Notebook view, not a `recoverStatus` value. The Notebook
+ * recovery UI codes against these exact names.
+ */
+type RecoverStatus = "idle" | "sending" | "sent" | "error";
+
 type AppState = {
   session: Session | null;
   repo: CanvasRepository | null;
@@ -230,6 +250,19 @@ type AppState = {
    * `selecting`-state list; cleared once a Room is chosen or the flow resets.
    */
   restorableRooms: Room[];
+
+  /** Current stage of the set/reset-password send (issue #96, ADR-0020). */
+  recoverStatus: RecoverStatus;
+  /** Human-readable failure reason when `recoverStatus === "error"`. */
+  recoverError: string | null;
+  /**
+   * True once a recovery link has been processed (`PASSWORD_RECOVERY` fired,
+   * or a "recover" auth-intent return) and the device is sitting on the
+   * recovery session awaiting a new password (issue #96, ADR-0020). Drives
+   * the Notebook to auto-open the "Set a new password" page. Cleared once the
+   * password is set or the page is dismissed.
+   */
+  recovering: boolean;
   /** True while a Room switch / create is in flight. Drives the
    *  small "Loading Room" overlay (#22). Distinct from `ready` so
    *  the full SplashScreen only shows during initial bootstrap. */
@@ -365,6 +398,38 @@ type AppState = {
   /** Reset the restore flow back to "idle" and clear any error — used when
    *  reopening the restore page (issue #82). */
   resetRestore: () => void;
+  /**
+   * Send a set/reset-password email — the ONE flow that serves both users
+   * who forgot their password and legacy users who Claimed before passwords
+   * existed (issue #96, ADR-0020). Records the auth-intent as "recover"
+   * BEFORE sending so the recovery link's return is distinguished from
+   * Claim/Restore, then calls `resetPasswordForEmail` with the recovery
+   * redirect. Flips `recoverStatus` "sending" → "sent" on success, or
+   * "error" (+ `recoverError`) on failure. The "sent" copy stays neutral —
+   * reached REGARDLESS of whether the email maps to an account, so we never
+   * reveal account existence. No-op outside the DOM.
+   *
+   * @param email - the email to send the recovery link to.
+   */
+  sendPasswordReset: (email: string) => Promise<void>;
+  /**
+   * Set a new password from the "Set a new password" page, driven by the
+   * `PASSWORD_RECOVERY` return (issue #96, ADR-0020). Calls
+   * `updateUser({ password })` on the recovery session Supabase has already
+   * adopted; on success the device is signed into the permanent account, so
+   * we resolve its Rooms exactly like a completed Restore (single → auto-load,
+   * many → "selecting", none → "empty") and clear the auth-intent. No-op
+   * outside the DOM. Surfaces a failure via `recoverError` without leaving
+   * the recovery page.
+   *
+   * @param password - the new password (validated ≥ 8 chars client-side,
+   *   per ADR-0020; Supabase enforces the same floor server-side).
+   */
+  setNewPassword: (password: string) => Promise<void>;
+  /** Reset the set/reset-password flow: clear the `recovering` flag, the
+   *  status, and any error — used when dismissing the "Set a new password"
+   *  page or the "check your inbox" state (issue #96). */
+  resetRecover: () => void;
   setRoom: (
     room: Room,
     surfaces: Surface[],
@@ -424,6 +489,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   restoreStatus: "idle",
   restoreError: null,
   restorableRooms: [],
+
+  recoverStatus: "idle",
+  recoverError: null,
+  recovering: false,
 
   currentRoom: null,
   rooms: [],
@@ -604,6 +673,70 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   resetRestore: () =>
     set({ restoreStatus: "idle", restoreError: null, restorableRooms: [] }),
+
+  sendPasswordReset: async (email) => {
+    // Need a DOM `window.location.origin` to build the recovery redirect.
+    if (typeof window === "undefined") return;
+    set({ recoverStatus: "sending", recoverError: null });
+    try {
+      // Record the intent BEFORE sending so the recovery link's return —
+      // which fires the same onAuthStateChange as Claim/Restore — drives the
+      // "Set a new password" page, not the certificate or room-resolution
+      // (issue #96, ADR-0020).
+      setAuthIntent("recover");
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: resetPasswordRedirectUrl(window.location.origin),
+      });
+      if (error) throw error;
+      // Neutral on success: reached regardless of whether the email maps to
+      // an account, so we never reveal account existence (ADR-0020).
+      set({ recoverStatus: "sent" });
+    } catch (err) {
+      set({
+        recoverStatus: "error",
+        recoverError: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+
+  setNewPassword: async (password) => {
+    // Need a DOM to adopt the recovery session / hit Supabase; bail in SSR
+    // / tests without jsdom (the store's other auth actions guard the same).
+    if (typeof window === "undefined") return;
+    set({ recoverStatus: "sending", recoverError: null });
+    let permanentSession: Session | null;
+    try {
+      // Supabase has already adopted the recovery session from the link's
+      // hash; `updateUser` writes the new password onto that account.
+      const { data, error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      permanentSession = data.user
+        ? (await supabase.auth.getSession()).data.session
+        : null;
+    } catch (err) {
+      set({
+        recoverStatus: "error",
+        recoverError: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    // Password set: the device is the permanent account. Leave the recovery
+    // page, adopt the session and resolve its Rooms exactly like a completed
+    // Restore (single → auto-load, many → "selecting", none → "empty"), then
+    // clear the intent.
+    set({ recoverStatus: "sent", recovering: false });
+    get().setSession(permanentSession);
+    const { repo } = get();
+    const userId = permanentSession?.user.id;
+    if (repo && userId) {
+      set({ restoreStatus: "restoring", restoreError: null });
+      await resolveRestoredRooms(repo, userId);
+    }
+    clearAuthIntent();
+  },
+
+  resetRecover: () =>
+    set({ recoverStatus: "idle", recoverError: null, recovering: false }),
 
   setRoom: (room, surfaces, notes, annotations) =>
     set({

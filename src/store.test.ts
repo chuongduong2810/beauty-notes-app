@@ -12,6 +12,7 @@ const signInWithOtp = vi.fn();
 const signInWithPassword = vi.fn();
 const getSession = vi.fn();
 const setSession = vi.fn();
+const resetPasswordForEmail = vi.fn();
 vi.mock("./lib/supabase", () => ({
   supabase: {
     auth: {
@@ -20,6 +21,8 @@ vi.mock("./lib/supabase", () => ({
       signInWithPassword: (...args: unknown[]) => signInWithPassword(...args),
       getSession: (...args: unknown[]) => getSession(...args),
       setSession: (...args: unknown[]) => setSession(...args),
+      resetPasswordForEmail: (...args: unknown[]) =>
+        resetPasswordForEmail(...args),
     },
   },
 }));
@@ -540,5 +543,102 @@ describe("store — restoreWithPassword (issue #95, ADR-0020)", () => {
     expect(useAppStore.getState().currentRoom?.id).toBe("room-1");
     expect(useAppStore.getState().restoreStatus).toBe("done");
     warn.mockRestore();
+  });
+});
+
+describe("store — set / reset password (issue #96, ADR-0020)", () => {
+  const permanentSession = {
+    user: { id: "perm-1", email: "ada@example.com" },
+  } as never;
+
+  beforeEach(() => {
+    updateUser.mockReset();
+    getSession.mockReset();
+    resetPasswordForEmail.mockReset();
+    window.localStorage.clear();
+    useAppStore.setState({
+      recoverStatus: "idle",
+      recoverError: null,
+      recovering: false,
+      restoreStatus: "idle",
+      restoreError: null,
+      restorableRooms: [],
+      session: null,
+      repo: null,
+      currentRoom: null,
+    });
+  });
+
+  it("sendPasswordReset records the 'recover' intent, sends the email, and flips to 'sent'", async () => {
+    resetPasswordForEmail.mockResolvedValue({ data: {}, error: null });
+
+    await useAppStore.getState().sendPasswordReset("ada@example.com");
+
+    expect(resetPasswordForEmail).toHaveBeenCalledWith(
+      "ada@example.com",
+      expect.objectContaining({ redirectTo: expect.any(String) }),
+    );
+    // Intent is recorded BEFORE send so the recovery return is routed right.
+    expect(window.localStorage.getItem("bn.auth-intent")).toBe("recover");
+    expect(useAppStore.getState().recoverStatus).toBe("sent");
+  });
+
+  it("sendPasswordReset surfaces a send failure as 'error'", async () => {
+    resetPasswordForEmail.mockResolvedValue({
+      data: {},
+      error: new Error("rate limited"),
+    });
+
+    await useAppStore.getState().sendPasswordReset("ada@example.com");
+
+    expect(useAppStore.getState().recoverStatus).toBe("error");
+    expect(useAppStore.getState().recoverError).toBe("rate limited");
+  });
+
+  it("setNewPassword writes the password, adopts the session, auto-loads the single Room, and clears the intent", async () => {
+    updateUser.mockResolvedValue({
+      data: { user: { id: "perm-1", email: "ada@example.com" } },
+      error: null,
+    });
+    getSession.mockResolvedValue({ data: { session: permanentSession } });
+    window.localStorage.setItem("bn.auth-intent", "recover");
+    let loadedRoomId: string | null = null;
+    const repo = {
+      async listRooms() {
+        return [{ id: "room-1", name: "Studio" } as unknown as Room];
+      },
+      async listSurfaces(roomId: string) {
+        loadedRoomId = roomId;
+        return [{ id: "s1", owner_id: "perm-1" }];
+      },
+      async listNotes() {
+        return [];
+      },
+      async listAnnotations() {
+        return [];
+      },
+    } as unknown as CanvasRepository;
+    useAppStore.setState({ repo });
+
+    await useAppStore.getState().setNewPassword("brand-new-pass");
+
+    expect(updateUser).toHaveBeenCalledWith({ password: "brand-new-pass" });
+    expect(useAppStore.getState().session).toBe(permanentSession);
+    expect(loadedRoomId).toBe("room-1");
+    expect(useAppStore.getState().currentRoom?.id).toBe("room-1");
+    expect(useAppStore.getState().recovering).toBe(false);
+    expect(window.localStorage.getItem("bn.auth-intent")).toBeNull();
+  });
+
+  it("setNewPassword surfaces an updateUser failure without leaving recovery", async () => {
+    updateUser.mockResolvedValue({
+      data: {},
+      error: new Error("weak password"),
+    });
+
+    await useAppStore.getState().setNewPassword("x");
+
+    expect(useAppStore.getState().recoverStatus).toBe("error");
+    expect(useAppStore.getState().recoverError).toBe("weak password");
   });
 });

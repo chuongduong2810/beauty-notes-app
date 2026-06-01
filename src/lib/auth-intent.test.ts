@@ -19,6 +19,9 @@ describe("auth-intent (issue #82, ADR-0019)", () => {
 
     setAuthIntent("claim");
     expect(getAuthIntent()).toBe("claim");
+
+    setAuthIntent("recover");
+    expect(getAuthIntent()).toBe("recover");
   });
 
   it("returns null when nothing has been recorded", () => {

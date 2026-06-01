@@ -64,6 +64,20 @@ type RestoreStoreSlice = {
   /** Load the chosen Room and finish the restore flow (issue #83). */
   restoreIntoRoom: (roomId: string) => Promise<void>;
   resetRestore: () => void;
+  /** Set/reset-password flow (issue #96, ADR-0020) — one flow for both
+   *  forgotten-password and legacy password-less users. */
+  recoverStatus: "idle" | "sending" | "sent" | "error";
+  recoverError: string | null;
+  /** True while sitting on the recovery session, awaiting a new password —
+   *  drives the auto-open of the "Set a new password" page. */
+  recovering: boolean;
+  /** Send the set/reset-password email from the Restore page. */
+  sendPasswordReset: (email: string) => Promise<void>;
+  /** Set the new password on a `PASSWORD_RECOVERY` return, then enter the
+   *  room. */
+  setNewPassword: (password: string) => Promise<void>;
+  /** Dismiss the recovery flow / "Set a new password" page. */
+  resetRecover: () => void;
 };
 
 /** Read the restore slice off the store with the contract types. */
@@ -82,6 +96,7 @@ type NotebookView =
   | "ledger"
   | "claim"
   | "restore"
+  | "recover"
   | "certificate";
 
 const BROWSE_VIEWS = new Set<NotebookView>([
@@ -208,6 +223,11 @@ function NotebookSpread({
   const sendRestoreLink = useRestoreStore((s) => s.sendRestoreLink);
   const restoreIntoRoom = useRestoreStore((s) => s.restoreIntoRoom);
   const resetRestore = useRestoreStore((s) => s.resetRestore);
+  const recoverStatus = useRestoreStore((s) => s.recoverStatus);
+  const recoverError = useRestoreStore((s) => s.recoverError);
+  const sendPasswordReset = useRestoreStore((s) => s.sendPasswordReset);
+  const setNewPassword = useRestoreStore((s) => s.setNewPassword);
+  const resetRecover = useRestoreStore((s) => s.resetRecover);
 
   const isGuest = session?.user.is_anonymous ?? true;
   const claimed = !isGuest;
@@ -286,6 +306,21 @@ function NotebookSpread({
     void sendRestoreLink(email.trim());
   };
 
+  // Set / reset password (issue #96, ADR-0020): from the Restore page, send
+  // the recovery email. Neutral on send — no account-existence leak. Only
+  // needs a valid email (no consent gate: this doesn't clear guest rooms).
+  const submitPasswordReset = () => {
+    if (!emailValid || recoverStatus === "sending") return;
+    void sendPasswordReset(email.trim());
+  };
+
+  // On the "Set a new password" page, commit the new password and enter the
+  // room. Reuses the #93 policy helper for validation.
+  const submitNewPassword = () => {
+    if (!passwordValid || recoverStatus === "sending") return;
+    void setNewPassword(password);
+  };
+
   // Choose a Room from the "Your Rooms" page (issue #83): load it, then
   // close the book to fly in — mirrors how the ledger's note rows navigate.
   const chooseRoom = (roomId: string) => {
@@ -296,6 +331,7 @@ function NotebookSpread({
   const backToRoom = () => {
     resetClaim();
     resetRestore();
+    resetRecover();
     setRestoreConsented(false);
     onClose();
   };
@@ -310,7 +346,7 @@ function NotebookSpread({
 
   // Re-mounts both pages on any view/stage change so the page-turn
   // animation replays.
-  const turnKey = `${view}:${claimStatus}:${restoreStatus}`;
+  const turnKey = `${view}:${claimStatus}:${restoreStatus}:${recoverStatus}`;
 
   if (!front) return null;
 
@@ -542,7 +578,44 @@ function NotebookSpread({
     // friendly, retryable send-failure page. Mirrors the Claim spread's
     // structure. ────────────────────────────────────────────────────────
     const sent = restoreStatus === "sent" || restoreStatus === "sending";
-    if (restoreStatus === "selecting") {
+    const recoverSent =
+      recoverStatus === "sent" || recoverStatus === "sending";
+    if (recoverSent) {
+      // ── Set/reset password email sent (issue #96, ADR-0020): neutral copy
+      // — never reveals whether the email maps to an account. ──────────────
+      leftBody = (
+        <div className="nb-claim-left nb-sent-left">
+          <p className="nb-sent-left__title">
+            Sending
+            <br />
+            your letter…
+          </p>
+          <span className="nb-sent-left__env" aria-hidden="true">✉️</span>
+          <span className="nb-sent-left__spark" aria-hidden="true">✦</span>
+        </div>
+      );
+      rightBody = (
+        <div className="nb-flow-right">
+          <div className="notebook-page__title">Letter Sent</div>
+          <p className="nb-sent__copy">
+            If a room is registered to this email, a letter to set a new
+            password is on its way to:
+          </p>
+          <p className="nb-sent__email">{email || "your inbox"}</p>
+          <p className="nb-sent__hint">
+            ✉ Follow the link inside to choose a new password.
+          </p>
+          <button
+            type="button"
+            className="nb-back"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={backToRoom}
+          >
+            ← Back to Room
+          </button>
+        </div>
+      );
+    } else if (restoreStatus === "selecting") {
       // ── Stage: "Your Rooms" — pick which Room to fly into (issue #83). ──
       leftBody = (
         <div className="nb-claim-left">
@@ -787,9 +860,7 @@ function NotebookSpread({
               if (e.key === "Enter") submitRestore();
             }}
           />
-          <p className="nb-claim__hint">
-            {PASSWORD_HINT}. Tick the note on the left, then reopen.
-          </p>
+          <p className="nb-claim__hint">{PASSWORD_HINT}.</p>
           <button
             type="button"
             className="nb-claim__cta"
@@ -810,6 +881,15 @@ function NotebookSpread({
           </button>
           <button
             type="button"
+            className="nb-restore-fallback"
+            disabled={!emailValid}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={submitPasswordReset}
+          >
+            Forgot it? Set a new password
+          </button>
+          <button
+            type="button"
             className="nb-back"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={backToRoom}
@@ -819,6 +899,69 @@ function NotebookSpread({
         </div>
       );
     }
+  } else if (view === "recover") {
+    // ── Set a new password (issue #96, ADR-0020): the page the
+    // PASSWORD_RECOVERY return lands on. Serves both forgotten-password
+    // users and legacy password-less Claimed users. ─────────────────────
+    const recoverFailed = recoverStatus === "error";
+    leftBody = (
+      <div className="nb-claim-left">
+        <div className="nb-claim-left__title">
+          Set a New
+          <br />
+          Password
+        </div>
+        <div className="nb-claim-left__rule" />
+        <p className="nb-claim-left__copy">
+          Choose a new password for your room. You&apos;ll slip straight back
+          in once it&apos;s set.
+        </p>
+        <div className="nb-deco">
+          <span className="nb-deco__key" aria-hidden="true">🗝️</span>
+          <span className="nb-deco__tag">Password</span>
+        </div>
+      </div>
+    );
+    rightBody = (
+      <div className="nb-flow-right">
+        <div className="notebook-page__title">New Password</div>
+        <label className="nb-field__label">Password</label>
+        <input
+          type="password"
+          className="nb-field__input"
+          placeholder="••••••••"
+          value={password}
+          autoComplete="new-password"
+          spellCheck={false}
+          onPointerDown={(e) => e.stopPropagation()}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submitNewPassword();
+          }}
+        />
+        <p className="nb-claim__hint">{PASSWORD_HINT}.</p>
+        {recoverFailed && recoverError && (
+          <div className="notebook-claim__error">{recoverError}</div>
+        )}
+        <button
+          type="button"
+          className="nb-claim__cta"
+          disabled={!passwordValid || recoverStatus === "sending"}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={submitNewPassword}
+        >
+          Set Password
+        </button>
+        <button
+          type="button"
+          className="nb-back"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={backToRoom}
+        >
+          ← Back to Room
+        </button>
+      </div>
+    );
   } else {
     // ── Claim flow (full spread): stage 2 form, or stage 3 letter sent ─
     const sent = claimStatus === "sent" || claimStatus === "sending";
@@ -1031,6 +1174,17 @@ export function Notebook({
       setView("restore");
     }
   }, [restoreStatus]);
+
+  // Auto-reveal on a password-recovery return (issue #96, ADR-0020): the
+  // PASSWORD_RECOVERY link sets `recovering` on the store, so open the book
+  // straight to the "Set a new password" page even if it was shut.
+  const recovering = useRestoreStore((s) => s.recovering);
+  useEffect(() => {
+    if (recovering) {
+      setOpen(true);
+      setView("recover");
+    }
+  }, [recovering]);
 
   // Escape closes the open book.
   useEffect(() => {

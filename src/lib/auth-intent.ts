@@ -13,8 +13,15 @@
  * module never touches a missing global.
  */
 
-/** Which flow requested the magic link currently in flight. */
-export type AuthIntent = "claim" | "restore";
+/**
+ * Which flow requested the magic link currently in flight.
+ *  - "claim" / "restore": the magic-link flows (ADR-0019).
+ *  - "recover": the set/reset-password flow (issue #96, ADR-0020) — the
+ *    recovery email's return must be distinguished from claim/restore so
+ *    it drives the "Set a new password" page rather than the certificate
+ *    or the restore room-resolution.
+ */
+export type AuthIntent = "claim" | "restore" | "recover";
 
 /** Single `localStorage` key backing the flag. */
 const AUTH_INTENT_KEY = "bn.auth-intent";
@@ -39,7 +46,9 @@ export function setAuthIntent(intent: AuthIntent): void {
 export function getAuthIntent(): AuthIntent | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(AUTH_INTENT_KEY);
-  return raw === "claim" || raw === "restore" ? raw : null;
+  return raw === "claim" || raw === "restore" || raw === "recover"
+    ? raw
+    : null;
 }
 
 /**
