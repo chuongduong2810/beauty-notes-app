@@ -178,6 +178,43 @@ describe("store — restore flow (issue #82, ADR-0019)", () => {
     expect(useAppStore.getState().restoreError).toBe("not found");
   });
 
+  it("sendRestoreLink hard-deletes the anon User's Rooms after a successful send (issue #84)", async () => {
+    signInWithOtp.mockResolvedValue({ data: {}, error: null });
+    let deletedOwnerId: string | null = null;
+    const repo = {
+      async deleteRoomsForOwner(ownerId: string) {
+        deletedOwnerId = ownerId;
+      },
+    } as unknown as CanvasRepository;
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "anon-1" } } as never,
+    });
+
+    await useAppStore.getState().sendRestoreLink("ada@example.com");
+
+    expect(deletedOwnerId).toBe("anon-1");
+    expect(useAppStore.getState().restoreStatus).toBe("sent");
+  });
+
+  it("sendRestoreLink does NOT delete guest Rooms when the send fails (issue #84)", async () => {
+    signInWithOtp.mockResolvedValue({
+      data: {},
+      error: new Error("not found"),
+    });
+    const deleteRoomsForOwner = vi.fn();
+    const repo = { deleteRoomsForOwner } as unknown as CanvasRepository;
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "anon-1" } } as never,
+    });
+
+    await useAppStore.getState().sendRestoreLink("ada@example.com");
+
+    expect(deleteRoomsForOwner).not.toHaveBeenCalled();
+    expect(useAppStore.getState().restoreStatus).toBe("error");
+  });
+
   it("completeRestore loads the single Room and clears the intent", async () => {
     window.localStorage.setItem("bn.auth-intent", "restore");
     const onlyRoom = { id: "room-1", name: "Studio" } as unknown as Room;

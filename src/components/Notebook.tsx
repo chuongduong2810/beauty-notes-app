@@ -213,6 +213,11 @@ function NotebookSpread({
 
   const [email, setEmail] = useState("");
   const emailValid = email.trim().length > 0 && email.includes("@");
+  // Consent gate for the guest-cleanup that Restore performs (issue #84,
+  // ADR-0019): reopening a claimed room signs this device out of its guest
+  // identity, so any rooms made here as a guest are cleared. The user must
+  // tick this before we'll send the link.
+  const [restoreConsented, setRestoreConsented] = useState(false);
 
   // Hide the DOM content when the camera is behind the book (the <Html>
   // overlay has no depth occlusion). Flips rarely → only re-render on the
@@ -254,7 +259,7 @@ function NotebookSpread({
   };
 
   const submitRestore = () => {
-    if (!emailValid || restoreStatus === "sending") return;
+    if (!emailValid || !restoreConsented || restoreStatus === "sending") return;
     void sendRestoreLink(email.trim());
   };
 
@@ -268,6 +273,7 @@ function NotebookSpread({
   const backToRoom = () => {
     resetClaim();
     resetRestore();
+    setRestoreConsented(false);
     onClose();
   };
 
@@ -622,13 +628,32 @@ function NotebookSpread({
           <p className="nb-claim__hint">
             A magic letter will be sent to your mailbox.
           </p>
+          <div className="nb-restore-warn">
+            <p className="nb-restore-warn__title">
+              ⚠️ This clears your guest rooms
+            </p>
+            <p className="nb-restore-warn__copy">
+              Reopening your room moves this device into your saved space.
+              Any rooms you started here as a guest stay behind and are
+              cleared from this device — there&apos;s no way back to them.
+            </p>
+            <label className="nb-restore-consent">
+              <input
+                type="checkbox"
+                checked={restoreConsented}
+                onPointerDown={(e) => e.stopPropagation()}
+                onChange={(e) => setRestoreConsented(e.target.checked)}
+              />
+              <span>I understand — clear my guest rooms and reopen my room.</span>
+            </label>
+          </div>
           {restoreStatus === "error" && restoreError && (
             <div className="notebook-claim__error">{restoreError}</div>
           )}
           <button
             type="button"
             className="nb-claim__cta"
-            disabled={!emailValid}
+            disabled={!emailValid || !restoreConsented}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={submitRestore}
           >

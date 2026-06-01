@@ -17,6 +17,15 @@ export interface CanvasRepository {
   insertRoom(owner_id: string, name: string): Promise<Room>;
   /** List the User's Rooms, most-recently-updated first. */
   listRooms(userId: string): Promise<Room[]>;
+  /**
+   * Hard-delete every Room owned by `ownerId`, cascading to its Surfaces,
+   * Notes, Annotations, and Strokes (ADR-0019). Used by the consented
+   * guest-cleanup step of Restore (issue #84): on restore the device leaves
+   * its anonymous identity, so the guest's Rooms can no longer follow it and
+   * are eagerly removed while still anonymous (RLS permits the anon User to
+   * delete only its own rows).
+   */
+  deleteRoomsForOwner(ownerId: string): Promise<void>;
   /** List the six Surfaces of a Room. */
   listSurfaces(roomId: string): Promise<Surface[]>;
   /**

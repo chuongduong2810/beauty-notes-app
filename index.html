@@ -1125,6 +1125,40 @@
         line-height: 1.4;
         margin: 12px 0 18px;
       }
+      /* Restore guest-cleanup consent gate (issue #84, ADR-0019). */
+      .nb-restore-warn {
+        border: 1.5px solid rgba(160, 70, 40, 0.45);
+        border-radius: 9px;
+        background: rgba(231, 168, 64, 0.12);
+        padding: 12px 14px;
+        margin: 0 0 18px;
+      }
+      .nb-restore-warn__title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #9a3b1c;
+        margin: 0 0 6px;
+      }
+      .nb-restore-warn__copy {
+        font-size: 12px;
+        color: #7a5e3c;
+        line-height: 1.45;
+        margin: 0 0 10px;
+      }
+      .nb-restore-consent {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 12px;
+        color: #4a3526;
+        line-height: 1.4;
+        cursor: pointer;
+      }
+      .nb-restore-consent input {
+        margin-top: 2px;
+        accent-color: #9a3b1c;
+        cursor: pointer;
+      }
       .nb-claim__cta {
         align-self: flex-start;
         padding: 10px 22px;
