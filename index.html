@@ -1313,6 +1313,104 @@
         word-break: break-word;
       }
 
+      /* Membership (issue #105, ADR-0021/0023). The Room Ledger's gentle
+         entry into the upgrade page — a quiet, warm affordance, never a
+         paywall banner. */
+      .nb-ledger__membership {
+        flex: 0 0 auto;
+        margin-top: 10px;
+        padding: 7px 10px;
+        border: 1px solid rgba(193, 122, 28, 0.55);
+        border-radius: 8px;
+        background: rgba(231, 168, 64, 0.16);
+        font-family: inherit;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #8a5a14;
+        cursor: pointer;
+        text-align: center;
+        transition: background 140ms ease;
+      }
+      .nb-ledger__membership:hover { background: rgba(231, 168, 64, 0.3); }
+      /* Membership left page — invitation framing ("expand your space"). */
+      .nb-member-left__title {
+        font-size: 26px;
+        font-weight: 700;
+        line-height: 1.05;
+        color: #2f2113;
+      }
+      .nb-member-left__copy {
+        font-size: 12.5px;
+        line-height: 1.45;
+        color: #5b4326;
+        margin: 0;
+      }
+      /* Plan cards — compact so all three fit the fixed 200×272 paper. The
+         cozy "expand your space" framing lives on the left page, so each card
+         carries just name + price + a one-line perk summary, keeping it short
+         enough that Explorer / Resident / Studio all fit without scrolling. */
+      .nb-plans { gap: 5px; }
+      .nb-plans .notebook-page__title { margin: 0 0 7px; padding-bottom: 4px; }
+      .nb-plan {
+        flex: 0 0 auto;
+        border: 1px solid rgba(120, 80, 40, 0.32);
+        border-radius: 8px;
+        background: rgba(255, 252, 244, 0.22);
+        padding: 4px 8px;
+      }
+      .nb-plan--current {
+        border-color: rgba(193, 122, 28, 0.85);
+        background: rgba(231, 168, 64, 0.18);
+      }
+      .nb-plan__head {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+      }
+      .nb-plan__name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #3a2410;
+      }
+      .nb-plan__price {
+        font-size: 11px;
+        font-weight: 700;
+        color: #8a5a14;
+      }
+      /* Perks as one quiet wrapped line (· separated) — informative without
+         the height of a bulleted list. */
+      .nb-plan__perks {
+        margin: 2px 0 0;
+        font-size: 10px;
+        line-height: 1.3;
+        color: #5b4326;
+      }
+      /* "Move in" CTA and the current-Plan tick sit inline at the end of the
+         head row (right-aligned via margin-left:auto), saving a whole row. */
+      .nb-plan__cta {
+        margin-left: auto;
+        white-space: nowrap;
+        padding: 2px 9px;
+        border: 1.5px solid rgba(160, 70, 40, 0.8);
+        border-radius: 6px;
+        background: transparent;
+        font-family: inherit;
+        font-size: 10.5px;
+        font-weight: 700;
+        color: #9a3b1c;
+        cursor: pointer;
+        transition: background 140ms ease;
+      }
+      .nb-plan__cta:hover { background: rgba(231, 168, 64, 0.22); }
+      .nb-plan__current {
+        margin-left: auto;
+        white-space: nowrap;
+        font-size: 10.5px;
+        font-weight: 700;
+        font-style: italic;
+        color: #6e8a3c;
+      }
+
       /* Ownership certificate (stage 4). */
       .nb-cert-left { height: 100%; }
       .nb-cert-left__frame {

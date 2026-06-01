@@ -14,6 +14,13 @@ import {
 } from "../lib/notebook-sections";
 import { buildRoomLedger } from "../lib/room-ledger";
 import { isValidPassword, PASSWORD_HINT } from "../lib/password";
+import { PLAN_CARDS } from "../lib/plans";
+import { getBillingProvider } from "../lib/billing";
+import {
+  tierFromMembership,
+  type Membership,
+  type Tier,
+} from "../lib/entitlements";
 import type { Room } from "../lib/room";
 import { paletteEntry } from "../lib/palette";
 import { useAppStore } from "../store";
@@ -86,6 +93,25 @@ function useRestoreStore<T>(selector: (slice: RestoreStoreSlice) => T): T {
 }
 
 /**
+ * Membership slice of the app store (issue #105, ADR-0021/0023). The
+ * Membership page reads the current `membership` to mark the active Plan and
+ * calls `refreshMembership` after a real checkout returns. Consumed read-only
+ * here; the mock provider updates the store directly, so no Plan mutation lives
+ * in this component. Field/method names match the #104 store contract verbatim.
+ */
+type MembershipStoreSlice = {
+  membership: Membership;
+  refreshMembership: () => Promise<void>;
+};
+
+/** Read the membership slice off the store with the contract types. */
+function useMembershipStore<T>(
+  selector: (slice: MembershipStoreSlice) => T,
+): T {
+  return useAppStore((s) => selector(s as unknown as MembershipStoreSlice));
+}
+
+/**
  * Which spread the open Notebook is showing (redesign per the 4-stage
  * ownership flow). The three Note sections + the Room Ledger are "browse"
  * spreads (tabs on the left page); `claim` and `certificate` are
@@ -97,6 +123,7 @@ type NotebookView =
   | "claim"
   | "restore"
   | "recover"
+  | "membership"
   | "certificate";
 
 const BROWSE_VIEWS = new Set<NotebookView>([
@@ -228,6 +255,8 @@ function NotebookSpread({
   const sendPasswordReset = useRestoreStore((s) => s.sendPasswordReset);
   const setNewPassword = useRestoreStore((s) => s.setNewPassword);
   const resetRecover = useRestoreStore((s) => s.resetRecover);
+  const membership = useMembershipStore((s) => s.membership);
+  const refreshMembership = useMembershipStore((s) => s.refreshMembership);
 
   const isGuest = session?.user.is_anonymous ?? true;
   const claimed = !isGuest;
@@ -326,6 +355,28 @@ function NotebookSpread({
   const chooseRoom = (roomId: string) => {
     void restoreIntoRoom(roomId);
     onClose();
+  };
+
+  // The User's current Plan, marked on the Membership page (ADR-0021).
+  const currentTier: Tier = tierFromMembership(membership);
+
+  // Upgrade to a paid Plan (issue #105): run the billing seam, then return to
+  // the room with entitlements refreshed so newly unlocked customization
+  // appears immediately. The mock provider updates the store synchronously and
+  // resolves with no redirect; the real provider (#106) resolves with a
+  // checkout `{ url }` to redirect to. Calling `refreshMembership` on a void
+  // (mock) resolve is harmless — it re-reads the same state.
+  const choosePlan = (tier: Exclude<Tier, "explorer">) => {
+    void getBillingProvider()
+      .startCheckout(tier)
+      .then((result) => {
+        if (result && typeof window !== "undefined") {
+          window.location.assign(result.url);
+          return;
+        }
+        void refreshMembership();
+        onClose();
+      });
   };
 
   const backToRoom = () => {
@@ -456,6 +507,17 @@ function NotebookSpread({
               )}
             </div>
           </div>
+          {/* Membership entry (issue #105) — open to everyone, since this is
+              how you expand your space. Framed as more room, never a paywall. */}
+          <button
+            type="button"
+            className="nb-ledger__membership"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setView("membership")}
+          >
+            <span aria-hidden="true">✦</span> Membership — expand your space{" "}
+            <span aria-hidden="true">→</span>
+          </button>
           {claimed ? (
             <button
               type="button"
@@ -533,6 +595,76 @@ function NotebookSpread({
         </>
       );
     }
+  } else if (view === "membership") {
+    // ── Membership (full spread, issue #105, ADR-0021/0023): the cozy
+    // "expand your space" upgrade page. The left page is the invitation; the
+    // right page shows the three Plans as compact cards with their perks and
+    // marks the User's current Plan. Choosing a paid Plan runs the billing
+    // seam (mock for now, #106 wires real Stripe) and returns to the room. No
+    // paywall popups; note-taking is never blocked. ──────────────────────
+    leftBody = (
+      <div className="nb-claim-left nb-member-left">
+        <div className="nb-member-left__title">
+          Expand
+          <br />
+          Your Space
+        </div>
+        <div className="nb-claim-left__rule" />
+        <p className="nb-member-left__copy">
+          Your notes, room, and the notebook are always free. A Membership
+          opens up more ways to make the space your own.
+        </p>
+        <div className="nb-deco">
+          <span className="nb-deco__seal" aria-hidden="true">🪴</span>
+          <span className="nb-deco__tag">Membership</span>
+        </div>
+        <button
+          type="button"
+          className="nb-back"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={backToRoom}
+        >
+          ← Back to Room
+        </button>
+      </div>
+    );
+    rightBody = (
+      <div className="nb-flow-right nb-plans">
+        <div className="notebook-page__title">Choose a Plan</div>
+        {PLAN_CARDS.map((plan) => {
+          const isCurrent = plan.tier === currentTier;
+          return (
+            <div
+              key={plan.tier}
+              className={"nb-plan" + (isCurrent ? " nb-plan--current" : "")}
+            >
+              <div className="nb-plan__head">
+                <span className="nb-plan__name">{plan.name}</span>
+                <span className="nb-plan__price">{plan.price}</span>
+                {/* The tick / "Move in" CTA ride the head row so each card
+                    stays short enough that all three Plans fit the page. */}
+                {isCurrent ? (
+                  <span className="nb-plan__current">✓ Yours</span>
+                ) : plan.tier === "explorer" ? null : (
+                  <button
+                    type="button"
+                    className="nb-plan__cta"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() =>
+                      choosePlan(plan.tier as Exclude<Tier, "explorer">)
+                    }
+                  >
+                    Move in
+                  </button>
+                )}
+              </div>
+              {/* Perks as one quiet · -separated line (see plans.ts copy). */}
+              <div className="nb-plan__perks">{plan.perks.join(" · ")}</div>
+            </div>
+          );
+        })}
+      </div>
+    );
   } else if (view === "certificate") {
     // ── Stage 4: Ownership Certificate (full spread) ──────────────────
     leftBody = (
