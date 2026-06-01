@@ -55,6 +55,11 @@ type RestoreStoreSlice = {
   restoreError: string | null;
   /** Candidate Rooms for the "Your Rooms" selection page (issue #83). */
   restorableRooms: Room[];
+  /**
+   * Restore instantly with a password — the primary path (issue #95,
+   * ADR-0020). The magic-link `sendRestoreLink` below stays as a fallback.
+   */
+  restoreWithPassword: (email: string, password: string) => Promise<void>;
   sendRestoreLink: (email: string) => Promise<void>;
   /** Load the chosen Room and finish the restore flow (issue #83). */
   restoreIntoRoom: (roomId: string) => Promise<void>;
@@ -199,6 +204,7 @@ function NotebookSpread({
   const restoreStatus = useRestoreStore((s) => s.restoreStatus);
   const restoreError = useRestoreStore((s) => s.restoreError);
   const restorableRooms = useRestoreStore((s) => s.restorableRooms);
+  const restoreWithPassword = useRestoreStore((s) => s.restoreWithPassword);
   const sendRestoreLink = useRestoreStore((s) => s.sendRestoreLink);
   const restoreIntoRoom = useRestoreStore((s) => s.restoreIntoRoom);
   const resetRestore = useRestoreStore((s) => s.resetRestore);
@@ -265,7 +271,17 @@ function NotebookSpread({
     void claimRoom(email.trim(), password);
   };
 
+  // Primary Restore (issue #95, ADR-0020): instant password sign-in. Needs
+  // a valid email + password and the guest-cleanup consent ticked.
   const submitRestore = () => {
+    if (!emailValid || !passwordValid || !restoreConsented) return;
+    if (restoreStatus === "sending" || restoreStatus === "restoring") return;
+    void restoreWithPassword(email.trim(), password);
+  };
+
+  // Fallback (issue #95): email me a magic link instead. Password isn't
+  // required here — kept reachable for users with no password yet.
+  const submitRestoreLink = () => {
     if (!emailValid || !restoreConsented || restoreStatus === "sending") return;
     void sendRestoreLink(email.trim());
   };
@@ -741,7 +757,7 @@ function NotebookSpread({
         </div>
       );
       rightBody = (
-        <div className="nb-flow-right">
+        <div className="nb-flow-right nb-restore-form">
           <div className="notebook-page__title">Reopen Your Room</div>
           <label className="nb-field__label">Email Address</label>
           <input
@@ -757,18 +773,40 @@ function NotebookSpread({
               if (e.key === "Enter") submitRestore();
             }}
           />
+          <label className="nb-field__label">Password</label>
+          <input
+            type="password"
+            className="nb-field__input"
+            placeholder="••••••••"
+            value={password}
+            autoComplete="current-password"
+            spellCheck={false}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitRestore();
+            }}
+          />
           <p className="nb-claim__hint">
-            A magic letter will be sent to your mailbox. Tick the note on the
-            left, then send.
+            {PASSWORD_HINT}. Tick the note on the left, then reopen.
           </p>
           <button
             type="button"
             className="nb-claim__cta"
-            disabled={!emailValid || !restoreConsented}
+            disabled={!emailValid || !passwordValid || !restoreConsented}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={submitRestore}
           >
-            Send Magic Link
+            Reopen Room
+          </button>
+          <button
+            type="button"
+            className="nb-restore-fallback"
+            disabled={!emailValid || !restoreConsented}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={submitRestoreLink}
+          >
+            Email me a link instead
           </button>
           <button
             type="button"

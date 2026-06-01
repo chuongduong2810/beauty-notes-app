@@ -70,6 +70,34 @@ function pushRoomUrl(roomId: string): void {
   window.history.pushState(null, "", target);
 }
 
+/**
+ * Resolve the Rooms owned by a freshly-restored permanent account and
+ * route the Notebook accordingly — shared by both Restore entry points:
+ * the magic-link return (`completeRestore`) and the instant password
+ * restore (`restoreWithPassword`). Single Room → fly straight in via the
+ * existing room-load path (`switchRoom`) and mark "done"; more than one →
+ * stash the candidates and flip to "selecting" so the "Your Rooms" page
+ * shows (issue #83); zero → flip to "empty" so the gentle "no room found"
+ * page shows, NOT auto-creating an empty Room (issue #85).
+ *
+ * @param repo - the canvas repository (already known non-null by callers).
+ * @param userId - the permanent account's User id whose Rooms to list.
+ */
+async function resolveRestoredRooms(
+  repo: CanvasRepository,
+  userId: string,
+): Promise<void> {
+  const rooms = await repo.listRooms(userId);
+  if (rooms.length === 1) {
+    await useAppStore.getState().switchRoom(rooms[0].id);
+    useAppStore.setState({ restoreStatus: "done" });
+  } else if (rooms.length > 1) {
+    useAppStore.setState({ restorableRooms: rooms, restoreStatus: "selecting" });
+  } else {
+    useAppStore.setState({ restoreStatus: "empty" });
+  }
+}
+
 // Module-scope debounced saver for Note bodies (ADR-0005). One channel
 // shared across all editing sessions; latest body wins.
 const bodySaver = new DebouncedSaver<{ noteId: string; body: string }>(
@@ -309,6 +337,27 @@ type AppState = {
    * done. */
   completeRestore: () => Promise<void>;
   /**
+   * Restore a Room instantly with a password — the PRIMARY Restore path
+   * (issue #95, ADR-0020). Verifies the credentials with
+   * `signInWithPassword({ email, password })`; on success the device session
+   * becomes the permanent account with no inbox round-trip. The magic-link
+   * `sendRestoreLink` stays as a fallback.
+   *
+   * Guest cleanup is verify-then-clean (ADR-0020): the anon session is
+   * captured BEFORE sign-in; on a wrong password it stays in place so the
+   * guest Rooms are intact and we stop. On success we briefly re-apply the
+   * saved anon session, hard-delete its Rooms (RLS only authorises the anon
+   * User to delete its own), then re-apply the permanent session — a delete
+   * failure is logged, never stranding the User. Then runs the same Room
+   * resolution as `completeRestore` (1 → auto-load, >1 → "selecting", 0 →
+   * "empty"). Flips `restoreStatus` to "restoring", then the resolved state,
+   * or "error" (+ `restoreError`). No-op outside the DOM.
+   *
+   * @param email - the permanent account email the User typed.
+   * @param password - the account password (validated ≥ 8 chars client-side).
+   */
+  restoreWithPassword: (email: string, password: string) => Promise<void>;
+  /**
    * Restore into a chosen Room from the "Your Rooms" selection page (issue
    * #83). Loads it via the existing room-load path (`switchRoom`), marks the
    * restore flow "done", and clears the candidate list. */
@@ -477,19 +526,73 @@ export const useAppStore = create<AppState>((set, get) => ({
     const userId = session?.user.id;
     if (!repo || !userId) return;
     set({ restoreStatus: "restoring", restoreError: null });
-    const rooms = await repo.listRooms(userId);
-    // Single-room case: fly straight into the one Room via the existing
-    // room-load path (switchRoom). More than one Room: stash the candidates
-    // and flip to "selecting" so the Notebook shows the "Your Rooms" page
-    // (issue #83). Zero Rooms: flip to "empty" so the Notebook shows a gentle
-    // "no room found" page — we must NOT auto-create an empty Room (issue #85).
-    if (rooms.length === 1) {
-      await get().switchRoom(rooms[0].id);
-      set({ restoreStatus: "done" });
-    } else if (rooms.length > 1) {
-      set({ restorableRooms: rooms, restoreStatus: "selecting" });
-    } else {
-      set({ restoreStatus: "empty" });
+    await resolveRestoredRooms(repo, userId);
+    clearAuthIntent();
+  },
+
+  restoreWithPassword: async (email, password) => {
+    // Need a DOM to juggle sessions / hit Supabase; bail in SSR / tests
+    // without jsdom (the store's other auth actions guard the same way).
+    if (typeof window === "undefined") return;
+    // Capture the CURRENT anonymous session + its User id BEFORE signing
+    // in. `signInWithPassword` swaps the session synchronously (unlike the
+    // async magic link), so the consented guest cleanup must run via this
+    // saved anon session afterwards — RLS only lets the anon User delete
+    // its own Rooms (ADR-0020, verify-then-clean).
+    const { repo } = get();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const savedAnonSession = sessionData.session;
+    const anonUserId = savedAnonSession?.user.id;
+    set({ restoreStatus: "restoring", restoreError: null });
+    // Record the intent so the `SIGNED_IN` event Supabase fires on the swap
+    // is handled as a Restore (not a Claim — which would pop the ownership
+    // certificate). Cleared once we've resolved the Rooms below (ADR-0019).
+    setAuthIntent("restore");
+    let permanentSession: Session | null;
+    try {
+      // Verify the credentials. On failure the existing anon session stays
+      // in place, so the guest Rooms are untouched — surface the error and
+      // stop (no cleanup, no data loss).
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+      permanentSession = data.session;
+    } catch (err) {
+      clearAuthIntent();
+      set({
+        restoreStatus: "error",
+        restoreError: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+
+    // Verified: the device is now the permanent account. Run the consented
+    // guest cleanup via the SAVED anon session (verify-then-clean, ADR-0020):
+    // re-apply the anon session so RLS authorises the delete, hard-delete its
+    // Rooms, then restore the permanent session. A delete failure is logged
+    // but must not strand the User mid-swap, so we always re-apply the
+    // permanent session in a `finally`.
+    if (repo && savedAnonSession && anonUserId) {
+      try {
+        await supabase.auth.setSession(savedAnonSession);
+        await repo.deleteRoomsForOwner(anonUserId);
+      } catch (err) {
+        console.warn("guest cleanup deleteRoomsForOwner failed", err);
+      } finally {
+        if (permanentSession) {
+          await supabase.auth.setSession(permanentSession);
+        }
+      }
+    }
+    get().setSession(permanentSession);
+
+    // Same Room resolution as the magic-link return (completeRestore):
+    // single → auto-load, many → "selecting", none → "empty".
+    const userId = permanentSession?.user.id;
+    if (repo && userId) {
+      await resolveRestoredRooms(repo, userId);
     }
     clearAuthIntent();
   },
