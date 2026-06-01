@@ -13,6 +13,21 @@ import type { Room, Surface, Note, NewNote } from "./room";
 import type { Annotation, NewStroke, Stroke } from "./stroke";
 import type { Membership } from "./entitlements";
 
+/**
+ * A partial update to a Room's Customization references into the Catalog
+ * (ADR-0022, issue #107). Every field is optional so a caller patches only
+ * the layer it changed; omitted fields are left untouched. `furniture` is
+ * the full replacement set of Catalog furniture ids (the store computes the
+ * add/remove before calling).
+ */
+export type RoomCustomizationPatch = {
+  theme_id?: string | null;
+  lighting_id?: string | null;
+  window_style_id?: string | null;
+  ambience_id?: string | null;
+  furniture?: string[];
+};
+
 export interface CanvasRepository {
   /**
    * Read the User's Membership (subscription state, ADR-0021), or `null`
@@ -44,6 +59,16 @@ export interface CanvasRepository {
   updateRoomCamera(
     id: string,
     pose: { yaw: number; pitch: number; distance: number },
+  ): Promise<Room>;
+  /**
+   * Persist a Room's Customization references into the Catalog (ADR-0022,
+   * issue #107). Applies only the fields present on `patch`, returning the
+   * updated Room. The store gates application on entitlements before calling
+   * this — the repo just writes whatever it is given.
+   */
+  updateRoomCustomization(
+    roomId: string,
+    patch: RoomCustomizationPatch,
   ): Promise<Room>;
 
   /** List every Note Pinned to any Surface of the Room, oldest first. */

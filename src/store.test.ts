@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "./store";
 import type { CanvasRepository } from "./lib/canvas-repository";
+import { InMemoryCanvasRepository } from "./lib/in-memory-canvas-repository";
 import type { Note, Room } from "./lib/room";
 import { entitlementsForTier } from "./lib/entitlements";
+import { catalogByKind } from "./lib/catalog";
 
 // Mock the Supabase client so claimRoom's `updateUser` (issue #70),
 // sendRestoreLink's `signInWithOtp` (issue #82) and restoreWithPassword's
@@ -706,5 +708,40 @@ describe("store — membership entitlements (issue #104, ADR-0021)", () => {
     await useAppStore.getState().refreshMembership();
 
     expect(useAppStore.getState().entitlements.maxRooms).toBe(1);
+  });
+});
+
+describe("store — applyCustomization (issue #107, ADR-0022)", () => {
+  /** A premium (non-Explorer) Theme Item from the Catalog for gating tests. */
+  const premiumTheme = catalogByKind("theme").find(
+    (i) => i.required_tier !== "explorer",
+  )!;
+
+  async function seedRoom(tier: "explorer" | "studio") {
+    const repo = new InMemoryCanvasRepository();
+    const room = await repo.insertRoom("u1", "Room");
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "u1" } } as never,
+      currentRoom: room,
+      rooms: [room],
+      entitlements: entitlementsForTier(tier),
+      customizationRefused: false,
+    } as never);
+    return room;
+  }
+
+  it("applies an unlocked Item and persists it on the Room", async () => {
+    await seedRoom("studio");
+    await useAppStore.getState().applyCustomization("theme", premiumTheme.id);
+    expect(useAppStore.getState().currentRoom?.theme_id).toBe(premiumTheme.id);
+    expect(useAppStore.getState().customizationRefused).toBe(false);
+  });
+
+  it("refuses a locked Item (Explorer entitlements) without persisting", async () => {
+    await seedRoom("explorer");
+    await useAppStore.getState().applyCustomization("theme", premiumTheme.id);
+    expect(useAppStore.getState().currentRoom?.theme_id ?? null).toBeNull();
+    expect(useAppStore.getState().customizationRefused).toBe(true);
   });
 });

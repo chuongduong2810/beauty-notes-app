@@ -37,6 +37,12 @@ import {
   type Entitlements,
   type Membership,
 } from "./lib/entitlements";
+import {
+  catalogItem,
+  isItemUnlocked,
+  type CatalogKind,
+} from "./lib/catalog";
+import type { RoomCustomizationPatch } from "./lib/canvas-repository";
 import type { Annotation, Stroke, StrokePoint } from "./lib/stroke";
 
 /** Tiny non-cryptographic id for optimistic Annotation / Stroke rows
@@ -122,6 +128,61 @@ const bodySaver = new DebouncedSaver<{ noteId: string; body: string }>(
     }
   },
 );
+
+/**
+ * Maps each single-layer Catalog kind to the Room field that stores its
+ * applied Item id (ADR-0022). `furniture` is handled separately as a set,
+ * so it is intentionally absent here.
+ */
+const CUSTOMIZATION_FIELD_BY_KIND: Record<
+  Exclude<CatalogKind, "furniture">,
+  "theme_id" | "lighting_id" | "window_style_id" | "ambience_id"
+> = {
+  theme: "theme_id",
+  lighting: "lighting_id",
+  window_style: "window_style_id",
+  ambience: "ambience_id",
+};
+
+/**
+ * Optimistically apply a Customization `patch` to the current Room, persist
+ * it via the repo, and reconcile the saved row into both `currentRoom` and
+ * the `rooms` list (ADR-0022, issue #107). Rolls the optimistic update back
+ * on a write failure. Clears `customizationRefused` since a patch only
+ * reaches here for an unlocked (or ungated removal) change.
+ *
+ * Shared by `applyCustomization` and the furniture add/remove actions so the
+ * optimistic-persist-reconcile-rollback dance lives in one place.
+ *
+ * @param patch - the Customization fields to write.
+ */
+async function applyRoomPatch(patch: RoomCustomizationPatch): Promise<void> {
+  const { repo, currentRoom } = useAppStore.getState();
+  if (!currentRoom) return;
+  const previous = currentRoom;
+  const optimistic: Room = { ...currentRoom, ...patch };
+  useAppStore.setState((s) => ({
+    customizationRefused: false,
+    currentRoom: optimistic,
+    rooms: s.rooms.map((r) => (r.id === optimistic.id ? optimistic : r)),
+  }));
+  if (!repo) return;
+  try {
+    const saved = await repo.updateRoomCustomization(previous.id, patch);
+    useAppStore.setState((s) => ({
+      currentRoom:
+        s.currentRoom?.id === saved.id ? saved : s.currentRoom,
+      rooms: s.rooms.map((r) => (r.id === saved.id ? saved : r)),
+    }));
+  } catch (err) {
+    console.warn("updateRoomCustomization failed; rolling back", err);
+    useAppStore.setState((s) => ({
+      currentRoom:
+        s.currentRoom?.id === previous.id ? previous : s.currentRoom,
+      rooms: s.rooms.map((r) => (r.id === previous.id ? previous : r)),
+    }));
+  }
+}
 
 /** One optimistic Note awaiting its batched insert: the temp id shown in
  *  local state, plus the row to persist. */
@@ -467,6 +528,37 @@ type AppState = {
    *  list, and switch to it. */
   createRoom: (name?: string) => Promise<Room | null>;
 
+  /**
+   * True when the last `applyCustomization` was REFUSED because the Item is
+   * locked for the current entitlements (ADR-0022). Set so the premium-
+   * discovery nudge (issue #108) has a seam to read; cleared on the next
+   * successful apply. No-op gating at the store layer otherwise.
+   */
+  customizationRefused: boolean;
+  /**
+   * Apply a Catalog Item to the current Room (ADR-0022, issue #107). Looks
+   * the Item up by id; if it is LOCKED for the current entitlements the call
+   * is refused — nothing is persisted and `customizationRefused` is set (the
+   * UI nudge is #108). For an unlocked Item it optimistically updates the
+   * matching `currentRoom` field (or, for the `furniture` kind, toggles the
+   * id into/out of the furniture set), persists via the repo, and reconciles
+   * `currentRoom` + `rooms` with the saved row. Rolls back on a write
+   * failure. No-op without a current Room or an unknown Item id.
+   *
+   * @param kind - the Catalog layer the Item belongs to.
+   * @param itemId - the Catalog Item id to apply.
+   */
+  applyCustomization: (kind: CatalogKind, itemId: string) => Promise<void>;
+  /** Add a furniture Catalog Item to the current Room's set (ADR-0022).
+   *  Thin wrapper over `applyCustomization` for the `furniture` kind when
+   *  the id is absent; a no-op if it is already applied. */
+  addFurniture: (itemId: string) => Promise<void>;
+  /** Remove a furniture Catalog Item from the current Room's set (ADR-0022).
+   *  Persists the trimmed set via the repo; rolls back on failure. Removal
+   *  is never gated — a downgraded User may still take premium Items off,
+   *  they just can't add new ones. No-op if the id isn't applied. */
+  removeFurniture: (itemId: string) => Promise<void>;
+
   setCurrentTool: (tool: Tool) => void;
   setPenHoverPoint: (
     point: { surface_id: string; u: number; v: number } | null,
@@ -516,6 +608,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   recoverStatus: "idle",
   recoverError: null,
   recovering: false,
+
+  customizationRefused: false,
 
   currentRoom: null,
   rooms: [],
@@ -841,6 +935,51 @@ export const useAppStore = create<AppState>((set, get) => ({
     } finally {
       set({ switchingRoom: false });
     }
+  },
+
+  applyCustomization: async (kind, itemId) => {
+    const { currentRoom, entitlements } = get();
+    if (!currentRoom) return;
+    const item = catalogItem(itemId);
+    // Unknown id or kind mismatch ⇒ ignore (Catalog authoring guard).
+    if (!item || item.kind !== kind) return;
+
+    // Gate on entitlement (ADR-0021). A locked Item is REFUSED at the store
+    // layer — nothing is persisted; the premium-discovery nudge is #108.
+    if (!isItemUnlocked(item, entitlements)) {
+      set({ customizationRefused: true });
+      return;
+    }
+
+    // Furniture is an additive set: applying toggles the id into the set
+    // (a no-op if already present). The single-layer kinds set their field.
+    let patch: RoomCustomizationPatch;
+    if (kind === "furniture") {
+      const current = currentRoom.furniture ?? [];
+      if (current.includes(itemId)) {
+        set({ customizationRefused: false });
+        return;
+      }
+      patch = { furniture: [...current, itemId] };
+    } else {
+      patch = { [CUSTOMIZATION_FIELD_BY_KIND[kind]]: itemId };
+    }
+
+    await applyRoomPatch(patch);
+  },
+
+  addFurniture: async (itemId) => {
+    await get().applyCustomization("furniture", itemId);
+  },
+
+  removeFurniture: async (itemId) => {
+    const { currentRoom } = get();
+    if (!currentRoom) return;
+    const current = currentRoom.furniture ?? [];
+    if (!current.includes(itemId)) return;
+    // Removal is never gated (ADR-0021: downgraded Rooms keep premium Items
+    // read-only — the User can still take them off, just not add new ones).
+    await applyRoomPatch({ furniture: current.filter((id) => id !== itemId) });
   },
 
   setCurrentTool: (tool) =>

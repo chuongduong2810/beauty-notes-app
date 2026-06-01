@@ -4,6 +4,7 @@ import { useThree } from "@react-three/fiber";
 import { Mesh, Raycaster, Vector2 } from "three";
 import type { Room, Surface, Note, SurfaceKind } from "../lib/room";
 import { paletteEntry } from "../lib/palette";
+import { catalogItem, defaultItemFor } from "../lib/catalog";
 import { surfaceTransform } from "../lib/surface-geometry";
 import { HoverTooltip } from "./HoverTooltip";
 import { NoteMesh } from "./NoteMesh";
@@ -382,7 +383,19 @@ export function RoomScene({
           room.depth_m,
           room.height_m,
         );
-        const color = paletteEntry(s.color_id).base;
+        // Theme Customization (ADR-0022, issue #107): a non-default wall
+        // Theme tints the walls via its catalog swatch. A null/absent or
+        // default theme falls back to the Surface's palette base, so an
+        // un-themed Room renders exactly as it did before customization.
+        const themeItem = room.theme_id ? catalogItem(room.theme_id) : null;
+        const themeSwatch =
+          themeItem && themeItem.id !== defaultItemFor("theme").id
+            ? themeItem.swatch
+            : undefined;
+        const color =
+          isWall(s.kind) && themeSwatch
+            ? themeSwatch
+            : paletteEntry(s.color_id).base;
         const surfaceNotes = notesBySurface.get(s.id) ?? [];
         const acceptsNotes = isWall(s.kind);
 

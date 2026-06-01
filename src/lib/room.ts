@@ -30,6 +30,19 @@ export type Room = {
   camera_yaw: number;
   camera_pitch: number;
   camera_distance: number;
+  /**
+   * Per-Room Customization references into the in-code Catalog (ADR-0022,
+   * issue #107). Each holds a Catalog Item id for that layer, or is
+   * null/absent to mean "the default look" — the render layer resolves a
+   * null reference via `defaultItemFor`, so an existing Room renders
+   * unchanged. `furniture` is a set of Catalog furniture ids (additive),
+   * defaulting to an empty array.
+   */
+  theme_id?: string | null;
+  lighting_id?: string | null;
+  window_style_id?: string | null;
+  ambience_id?: string | null;
+  furniture?: string[];
   created_at: string;
   updated_at: string;
 };
