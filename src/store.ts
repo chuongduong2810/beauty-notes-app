@@ -378,6 +378,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   sendRestoreLink: async (email) => {
     // Need a DOM `window.location.origin` to build the redirect from.
     if (typeof window === "undefined") return;
+    // Capture the current anonymous User id BEFORE sending. The guest
+    // cleanup delete must run while still anonymous — RLS only lets the
+    // anon User delete its own Rooms, and after the session swaps to the
+    // permanent account it is impossible (ADR-0019).
+    const { repo, session } = get();
+    const anonUserId = session?.user.id;
     set({ restoreStatus: "sending", restoreError: null });
     try {
       // Record the intent BEFORE sending so the magic-link return (which
@@ -392,7 +398,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       });
       if (error) throw error;
-      // guest cleanup: issue #83
+      // Consented guest cleanup (issue #84, ADR-0019): the link is out and
+      // the device is about to leave its anonymous identity, so its guest
+      // Rooms can no longer follow it. Hard-delete them now, while still
+      // anonymous. If the delete fails the link is already sent, so don't
+      // strand the user — log and still treat the restore as sent.
+      if (repo && anonUserId) {
+        try {
+          await repo.deleteRoomsForOwner(anonUserId);
+        } catch (err) {
+          console.warn("guest cleanup deleteRoomsForOwner failed", err);
+        }
+      }
       set({ restoreStatus: "sent" });
     } catch (err) {
       set({

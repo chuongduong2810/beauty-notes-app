@@ -51,6 +51,17 @@ export function supabaseCanvasRepository(
       return (data ?? []) as Room[];
     },
 
+    async deleteRoomsForOwner(ownerId) {
+      // The DB's ON DELETE CASCADE foreign keys take care of the children
+      // (surfaces → notes/annotations → strokes), so a single delete on
+      // rooms is enough (ADR-0019).
+      const { error } = await supabase
+        .from("rooms")
+        .delete()
+        .eq("owner_id", ownerId);
+      if (error) throw error;
+    },
+
     async listSurfaces(roomId) {
       const { data, error } = await supabase
         .from("surfaces")

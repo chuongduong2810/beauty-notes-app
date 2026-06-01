@@ -68,6 +68,41 @@ export class InMemoryCanvasRepository implements CanvasRepository {
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
+  async deleteRoomsForOwner(ownerId: string): Promise<void> {
+    // Mirror the DB's ON DELETE CASCADE (ADR-0019) by hand: remove the
+    // owner's rooms, then surfaces whose room was removed, then
+    // notes/annotations on those surfaces, then strokes on those
+    // annotations.
+    const removedRoomIds = new Set(
+      this.rooms.filter((r) => r.owner_id === ownerId).map((r) => r.id),
+    );
+    this.rooms = this.rooms.filter((r) => !removedRoomIds.has(r.id));
+
+    const removedSurfaceIds = new Set(
+      this.surfaces.filter((s) => removedRoomIds.has(s.room_id)).map((s) => s.id),
+    );
+    this.surfaces = this.surfaces.filter(
+      (s) => !removedSurfaceIds.has(s.id),
+    );
+
+    this.notes = this.notes.filter(
+      (n) => !removedSurfaceIds.has(n.surface_id),
+    );
+
+    const removedAnnotationIds = new Set(
+      this.annotations
+        .filter((a) => removedSurfaceIds.has(a.surface_id))
+        .map((a) => a.id),
+    );
+    this.annotations = this.annotations.filter(
+      (a) => !removedAnnotationIds.has(a.id),
+    );
+
+    this.strokes = this.strokes.filter(
+      (s) => !removedAnnotationIds.has(s.annotation_id),
+    );
+  }
+
   async listSurfaces(roomId: string): Promise<Surface[]> {
     return this.surfaces.filter((s) => s.room_id === roomId);
   }
