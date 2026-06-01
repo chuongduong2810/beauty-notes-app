@@ -1110,7 +1110,9 @@
         background: transparent;
         padding: 6px 2px;
         font-family: inherit;
-        font-size: 17px;
+        /* 15px (not 17) so a full-length email fits the 168px page width
+           without clipping at the page edge. */
+        font-size: 15px;
         font-style: italic;
         color: #34281b;
       }
@@ -1125,33 +1127,51 @@
         line-height: 1.4;
         margin: 12px 0 18px;
       }
-      /* Restore guest-cleanup consent gate (issue #84, ADR-0019). */
+      /* Restore form left page (issue #82 redesign): title + tagline +
+         the guest-cleanup consent gate, sized to fit the fixed paper. */
+      .nb-restore-left__title {
+        font-size: 21px;
+        font-weight: 700;
+        line-height: 1.04;
+        color: #2f2113;
+      }
+      /* Tighter rule on the restore-left page only (scoped so the Claim
+         page's rule spacing is untouched). */
+      .nb-restore-left .nb-claim-left__rule { margin: 7px 0 9px; }
+      .nb-restore-left__copy {
+        font-size: 12px;
+        line-height: 1.4;
+        color: #5b4326;
+        margin: 0 0 10px;
+      }
+      /* Restore guest-cleanup consent gate (issue #84, ADR-0019). Compact
+         so the warning + consent fit beneath the tagline on the left page. */
       .nb-restore-warn {
         border: 1.5px solid rgba(160, 70, 40, 0.45);
         border-radius: 9px;
         background: rgba(231, 168, 64, 0.12);
-        padding: 12px 14px;
-        margin: 0 0 18px;
+        padding: 10px 12px;
+        margin: 0;
       }
       .nb-restore-warn__title {
-        font-size: 13px;
+        font-size: 12.5px;
         font-weight: 700;
         color: #9a3b1c;
-        margin: 0 0 6px;
+        margin: 0 0 5px;
       }
       .nb-restore-warn__copy {
-        font-size: 12px;
+        font-size: 11.5px;
         color: #7a5e3c;
-        line-height: 1.45;
-        margin: 0 0 10px;
+        line-height: 1.4;
+        margin: 0 0 8px;
       }
       .nb-restore-consent {
         display: flex;
         align-items: flex-start;
         gap: 8px;
-        font-size: 12px;
+        font-size: 11.5px;
         color: #4a3526;
-        line-height: 1.4;
+        line-height: 1.35;
         cursor: pointer;
       }
       .nb-restore-consent input {

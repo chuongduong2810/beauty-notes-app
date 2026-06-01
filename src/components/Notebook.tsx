@@ -700,22 +700,37 @@ function NotebookSpread({
         </div>
       );
     } else {
+      // Layout note: the warning + consent gate lives on the LEFT page and
+      // the email form on the RIGHT, so neither page overflows the fixed
+      // 200×272 paper (the single-page cram clipped the email + buttons).
       leftBody = (
-        <div className="nb-claim-left">
-          <div className="nb-claim-left__title">
+        <div className="nb-claim-left nb-restore-left">
+          <div className="nb-restore-left__title">
             Restore
             <br />
             Your Room
           </div>
           <div className="nb-claim-left__rule" />
-          <p className="nb-claim-left__copy">
-            Reopen a room you&apos;ve already claimed — its notes, layout,
-            and view, just as you left them.
+          <p className="nb-restore-left__copy">
+            Reopen a room you&apos;ve claimed — just as you left it.
           </p>
-          <div className="nb-deco">
-            <span className="nb-deco__key" aria-hidden="true">🗝️</span>
-            <span className="nb-deco__seal" aria-hidden="true">🚪</span>
-            <span className="nb-deco__tag">Restore</span>
+          <div className="nb-restore-warn">
+            <p className="nb-restore-warn__title">
+              ⚠️ This clears your guest rooms
+            </p>
+            <p className="nb-restore-warn__copy">
+              The guest rooms on this device are cleared and can&apos;t be
+              brought back.
+            </p>
+            <label className="nb-restore-consent">
+              <input
+                type="checkbox"
+                checked={restoreConsented}
+                onPointerDown={(e) => e.stopPropagation()}
+                onChange={(e) => setRestoreConsented(e.target.checked)}
+              />
+              <span>I understand — clear my guest rooms.</span>
+            </label>
           </div>
         </div>
       );
@@ -737,27 +752,9 @@ function NotebookSpread({
             }}
           />
           <p className="nb-claim__hint">
-            A magic letter will be sent to your mailbox.
+            A magic letter will be sent to your mailbox. Tick the note on the
+            left, then send.
           </p>
-          <div className="nb-restore-warn">
-            <p className="nb-restore-warn__title">
-              ⚠️ This clears your guest rooms
-            </p>
-            <p className="nb-restore-warn__copy">
-              Reopening your room moves this device into your saved space.
-              Any rooms you started here as a guest stay behind and are
-              cleared from this device — there&apos;s no way back to them.
-            </p>
-            <label className="nb-restore-consent">
-              <input
-                type="checkbox"
-                checked={restoreConsented}
-                onPointerDown={(e) => e.stopPropagation()}
-                onChange={(e) => setRestoreConsented(e.target.checked)}
-              />
-              <span>I understand — clear my guest rooms and reopen my room.</span>
-            </label>
-          </div>
           <button
             type="button"
             className="nb-claim__cta"
