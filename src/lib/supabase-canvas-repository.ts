@@ -110,6 +110,18 @@ export function supabaseCanvasRepository(
       return data as Note;
     },
 
+    async insertNotes(notes) {
+      if (notes.length === 0) return [];
+      // A single multi-row insert; `.select()` returns the rows in input
+      // order so callers can reconcile optimistic ids positionally.
+      const { data, error } = await supabase
+        .from("notes")
+        .insert(notes)
+        .select();
+      if (error) throw error;
+      return (data ?? []) as Note[];
+    },
+
     async updateNotePin(id, pin) {
       const { data, error } = await supabase
         .from("notes")

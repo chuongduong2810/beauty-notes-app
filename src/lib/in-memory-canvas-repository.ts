@@ -129,6 +129,13 @@ export class InMemoryCanvasRepository implements CanvasRepository {
     return row;
   }
 
+  async insertNotes(notes: NewNote[]): Promise<Note[]> {
+    // Mirror the SQL multi-row insert: persist in order, return the rows.
+    const out: Note[] = [];
+    for (const note of notes) out.push(await this.insertNote(note));
+    return out;
+  }
+
   async updateNotePin(
     id: string,
     pin: { surface_id: string; u: number; v: number },
