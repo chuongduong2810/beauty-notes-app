@@ -42,6 +42,7 @@ import {
   isItemUnlocked,
   type CatalogKind,
 } from "./lib/catalog";
+import { canCreateRoom } from "./lib/room-access";
 import type { RoomCustomizationPatch } from "./lib/canvas-repository";
 import type { Annotation, Stroke, StrokePoint } from "./lib/stroke";
 
@@ -916,8 +917,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   createRoom: async (name = "Untitled") => {
-    const { repo, session } = get();
+    const { repo, session, rooms: ownedRooms, entitlements } = get();
     if (!repo || !session) return null;
+    // Multi-room is a Studio Entitlement (ADR-0021, issue #109). Explorer is
+    // capped at one Room: refuse creation beyond the cap rather than erroring
+    // — the RoomPicker routes the User to Membership instead. Existing Rooms
+    // are never touched.
+    if (!canCreateRoom(ownedRooms.length, entitlements.maxRooms)) return null;
     // Flush pending optimistic creates for the current Room before its
     // `notes` are swapped out for the new (empty) Room.
     await noteSaver.flush();

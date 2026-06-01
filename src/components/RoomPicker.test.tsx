@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { InMemoryCanvasRepository } from "../lib/in-memory-canvas-repository";
+import { entitlementsForTier } from "../lib/entitlements";
 import { useAppStore } from "../store";
 import { RoomPicker } from "./RoomPicker";
 
@@ -18,6 +19,9 @@ async function seedTwoRooms() {
     surfaces: await repo.listSurfaces(r1.id),
     notes: [],
     annotations: [],
+    // Studio entitlement: unlimited Rooms, so multi-room + "New Room" are
+    // available (these fixtures model a paid User; gating is covered below).
+    entitlements: entitlementsForTier("studio"),
     ready: true,
   });
   return { repo, r1, r2 };
@@ -72,5 +76,20 @@ describe("RoomPicker — top-left dropdown (issue #22)", () => {
     const state = useAppStore.getState();
     expect(state.rooms.length).toBe(3);
     expect(state.currentRoom?.name).toBe("Untitled");
+  });
+
+  it("at the Explorer Room cap, shows a Studio nudge instead of '+ New Room'", async () => {
+    // Two owned Rooms but only an Explorer entitlement (cap 1): creation is
+    // gated (issue #109). The extra Room stays listed (read-only), and the
+    // creator is replaced by an upgrade nudge.
+    await seedTwoRooms();
+    useAppStore.setState({ entitlements: entitlementsForTier("explorer") });
+    render(<RoomPicker />);
+    fireEvent.click(screen.getByRole("button", { name: /studio/i }));
+    const items = screen.getAllByRole("menuitem");
+    expect(items.find((el) => el.textContent?.includes("New Room"))).toBeFalsy();
+    expect(
+      items.find((el) => el.textContent?.includes("More rooms")),
+    ).toBeTruthy();
   });
 });

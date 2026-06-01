@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAppStore } from "../store";
+import { readOnlyRoomIds, canCreateRoom } from "../lib/room-access";
 
 /**
  * Top-left Room picker dropdown (issue #22). Closed: shows the
@@ -90,6 +91,7 @@ export function RoomPicker() {
   const rooms = useAppStore((s) => s.rooms);
   const switchRoom = useAppStore((s) => s.switchRoom);
   const createRoom = useAppStore((s) => s.createRoom);
+  const entitlements = useAppStore((s) => s.entitlements);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -107,6 +109,12 @@ export function RoomPicker() {
   }, [open]);
 
   if (!currentRoom) return null;
+
+  // Multi-room gating (ADR-0021, issue #109): Rooms beyond the Plan cap are
+  // read-only (kept, never deleted); at the cap, "New Room" becomes a Studio
+  // nudge rather than creating.
+  const readOnly = readOnlyRoomIds(rooms, entitlements.maxRooms);
+  const atCap = !canCreateRoom(rooms.length, entitlements.maxRooms);
 
   return (
     <div style={containerStyle} ref={containerRef} data-testid="room-picker">
@@ -126,37 +134,61 @@ export function RoomPicker() {
         <div role="menu" style={menuStyle}>
           {rooms.map((r) => {
             const active = r.id === currentRoom.id;
+            const locked = readOnly.has(r.id);
             return (
               <button
                 key={r.id}
                 role="menuitem"
                 type="button"
-                style={{ ...itemStyle, ...(active ? itemActiveStyle : null) }}
+                style={{
+                  ...itemStyle,
+                  ...(active ? itemActiveStyle : null),
+                  ...(locked ? { opacity: 0.55 } : null),
+                }}
+                title={locked ? "Read-only — unlock with Studio" : undefined}
                 onClick={() => {
                   setOpen(false);
                   if (!active) void switchRoom(r.id);
                 }}
               >
                 <span>{r.name}</span>
-                {active && (
+                {active ? (
                   <span aria-hidden style={{ fontSize: 11, opacity: 0.7 }}>
                     ●
                   </span>
-                )}
+                ) : locked ? (
+                  <span aria-hidden style={{ fontSize: 11, opacity: 0.7 }}>
+                    🔒
+                  </span>
+                ) : null}
               </button>
             );
           })}
-          <button
-            role="menuitem"
-            type="button"
-            style={newRoomStyle}
-            onClick={() => {
-              setOpen(false);
-              void createRoom();
-            }}
-          >
-            + New Room
-          </button>
+          {atCap ? (
+            // At the Plan's Room cap: a quiet Studio nudge, not a creator.
+            // (Routing into the Membership page is a follow-up; this closes
+            // the menu and reads as an upgrade cue.)
+            <button
+              role="menuitem"
+              type="button"
+              style={{ ...newRoomStyle, color: "#c9a24a" }}
+              onClick={() => setOpen(false)}
+            >
+              ✦ More rooms with Studio
+            </button>
+          ) : (
+            <button
+              role="menuitem"
+              type="button"
+              style={newRoomStyle}
+              onClick={() => {
+                setOpen(false);
+                void createRoom();
+              }}
+            >
+              + New Room
+            </button>
+          )}
         </div>
       )}
     </div>
