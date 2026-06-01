@@ -13,10 +13,14 @@ import {
   type NewNote,
 } from "./room";
 import type { Annotation, NewStroke, Stroke } from "./stroke";
+import type { Membership } from "./entitlements";
 
 /** Annotation row without its `strokes` array — strokes live in their
  *  own collection in the in-memory store, matching the SQL shape. */
 type AnnotationRow = Omit<Annotation, "strokes">;
+
+/** A seeded Membership row keyed by owner, mirroring the SQL table's PK. */
+type MembershipRow = NonNullable<Membership> & { owner_id: string };
 
 /**
  * Test double for `CanvasRepository`. Mirrors the surface the Supabase
@@ -29,9 +33,23 @@ export class InMemoryCanvasRepository implements CanvasRepository {
   notes: Note[] = [];
   annotations: AnnotationRow[] = [];
   strokes: Stroke[] = [];
+  memberships: MembershipRow[] = [];
   insertRoomCalls = 0;
   insertNoteCalls = 0;
   insertStrokeCalls = 0;
+
+  /** Test helper: seed a Membership row (the real table is webhook-written,
+   *  so there is no public insert path — tests seed directly). */
+  seedMembership(row: MembershipRow): void {
+    this.memberships = [
+      ...this.memberships.filter((m) => m.owner_id !== row.owner_id),
+      row,
+    ];
+  }
+
+  async getMembership(ownerId: string): Promise<Membership> {
+    return this.memberships.find((m) => m.owner_id === ownerId) ?? null;
+  }
 
   async insertRoom(owner_id: string, name: string): Promise<Room> {
     this.insertRoomCalls++;

@@ -11,8 +11,17 @@
 
 import type { Room, Surface, Note, NewNote } from "./room";
 import type { Annotation, NewStroke, Stroke } from "./stroke";
+import type { Membership } from "./entitlements";
 
 export interface CanvasRepository {
+  /**
+   * Read the User's Membership (subscription state, ADR-0021), or `null`
+   * when they have none. Only the fields needed to derive the active tier
+   * are returned; entitlements are computed from this row in the store
+   * (issue #104). Clients can only ever SELECT their own row (RLS); the
+   * Stripe webhook is the sole writer (ADR-0023).
+   */
+  getMembership(ownerId: string): Promise<Membership>;
   /** Insert a Room and seed its six Surfaces. */
   insertRoom(owner_id: string, name: string): Promise<Room>;
   /** List the User's Rooms, most-recently-updated first. */
