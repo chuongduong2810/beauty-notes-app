@@ -41,6 +41,12 @@ export interface CanvasRepository {
   listNotes(roomId: string): Promise<Note[]>;
   /** Insert a Note Pinned at `(surface_id, u, v)`. */
   insertNote(note: NewNote): Promise<Note>;
+  /**
+   * Insert many Notes in one round-trip, returning the persisted rows in the
+   * same order. Used to coalesce a burst of rapid Note creations into a
+   * single write (see DebouncedBatcher). Returns `[]` for an empty input.
+   */
+  insertNotes(notes: NewNote[]): Promise<Note[]>;
   /** Re-Pin a Note to a (possibly different) Surface at `(u, v)`. */
   updateNotePin(
     id: string,

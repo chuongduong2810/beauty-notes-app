@@ -2,6 +2,7 @@ import type { Session } from "@supabase/supabase-js";
 import { create } from "zustand";
 import type { CanvasRepository } from "./lib/canvas-repository";
 import { DebouncedSaver } from "./lib/debounced-saver";
+import { DebouncedBatcher } from "./lib/debounced-batcher";
 import { DEFAULT_NOTE_COLOR_ID } from "./lib/palette";
 import {
   appendStrokePoint as appendStrokePointReducer,
@@ -21,6 +22,7 @@ import { supabase } from "./lib/supabase";
 import {
   DEFAULT_NOTE_HEIGHT_CM,
   DEFAULT_NOTE_WIDTH_CM,
+  type NewNote,
   type Note,
   type Room,
   type Surface,
@@ -34,6 +36,13 @@ function tempId(prefix: string): string {
 }
 
 const NOTE_BODY_DEBOUNCE_MS = 500;
+/**
+ * Quiet period before a burst of freshly-created Notes is flushed to the
+ * repo in one `insertNotes` write. Short enough that a Note persists almost
+ * immediately, long enough that rapid wall double-clicks coalesce into a
+ * single round-trip (ADR-0005 debounced-autosave, applied to creates).
+ */
+const NOTE_CREATE_DEBOUNCE_MS = 500;
 /**
  * How long the crumple-then-delete animation plays before the Note is
  * actually removed from state. Matches the spring settle time in
@@ -72,6 +81,37 @@ const bodySaver = new DebouncedSaver<{ noteId: string; body: string }>(
       await repo.updateNoteBody(noteId, body);
     } catch (err) {
       console.warn("updateNoteBody failed", err);
+    }
+  },
+);
+
+/** One optimistic Note awaiting its batched insert: the temp id shown in
+ *  local state, plus the row to persist. */
+type PendingNote = { optimisticId: string; newNote: NewNote };
+
+// Module-scope batcher that coalesces a burst of Note creations into a
+// single `insertNotes` write. Each create is shown optimistically with a
+// temp id; on flush we swap in the persisted rows (returned in push order),
+// or roll the whole batch back if the write fails.
+const noteSaver = new DebouncedBatcher<PendingNote>(
+  NOTE_CREATE_DEBOUNCE_MS,
+  async (batch) => {
+    const repo = useAppStore.getState().repo;
+    if (!repo) return;
+    try {
+      const saved = await repo.insertNotes(batch.map((b) => b.newNote));
+      const byOptimisticId = new Map(
+        batch.map((b, i) => [b.optimisticId, saved[i]]),
+      );
+      useAppStore.setState((s) => ({
+        notes: s.notes.map((n) => byOptimisticId.get(n.id) ?? n),
+      }));
+    } catch (err) {
+      console.warn("insertNotes failed; rolling back", err);
+      const rollback = new Set(batch.map((b) => b.optimisticId));
+      useAppStore.setState((s) => ({
+        notes: s.notes.filter((n) => !rollback.has(n.id)),
+      }));
     }
   },
 );
@@ -480,6 +520,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { repo, currentRoom } = get();
     if (!repo) return;
     if (currentRoom?.id === roomId) return;
+    // Persist any pending optimistic creates before `notes` is replaced by
+    // the next Room's bundle, so a burst of creates isn't dropped on switch.
+    await noteSaver.flush();
     set({ switchingRoom: true });
     try {
       const bundle = await loadRoom(repo, roomId);
@@ -499,6 +542,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   createRoom: async (name = "Untitled") => {
     const { repo, session } = get();
     if (!repo || !session) return null;
+    // Flush pending optimistic creates for the current Room before its
+    // `notes` are swapped out for the new (empty) Room.
+    await noteSaver.flush();
     set({ switchingRoom: true });
     try {
       const room = await repo.insertRoom(session.user.id, name);
@@ -683,9 +729,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   createNoteAt: async (surfaceId, u, v) => {
-    const { repo, session } = get();
-    if (!repo || !session) return;
-    const note = await repo.insertNote({
+    const { session } = get();
+    if (!session) return;
+    // Optimistic create: the Note appears on the Surface the instant the
+    // user double-clicks, with a temp id — no waiting on the repo. The
+    // actual write is deferred to `noteSaver`, which coalesces a burst of
+    // rapid creates into one `insertNotes` round-trip and then swaps each
+    // optimistic Note for its persisted row (or rolls the batch back on
+    // failure). The wall double-click is fire-and-forget, so nothing
+    // downstream holds the temp id.
+    const optimisticId = tempId("pending-note");
+    const now = new Date().toISOString();
+    const newNote: NewNote = {
       surface_id: surfaceId,
       owner_id: session.user.id,
       u,
@@ -695,8 +750,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       body: "",
       color_id: DEFAULT_NOTE_COLOR_ID,
       bookmarked: false,
-    });
-    set((s) => ({ notes: [...s.notes, note] }));
+    };
+    set((s) => ({
+      notes: [
+        ...s.notes,
+        { ...newNote, id: optimisticId, created_at: now, updated_at: now },
+      ],
+    }));
+    noteSaver.push({ optimisticId, newNote });
   },
 
   beginNoteDrag: (noteId) => {

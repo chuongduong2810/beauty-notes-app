@@ -73,6 +73,37 @@ describe("CanvasRepository — Note CRUD on v2 shape (issue #15)", () => {
     expect(inA.map((n) => n.id)).toEqual([n1.id, n2.id]);
   });
 
+  it("insertNotes persists a batch in one call, returning rows in input order", async () => {
+    const repo = new InMemoryCanvasRepository();
+    const room = await repo.insertRoom("user-1", "Room");
+    const surfaces = await repo.listSurfaces(room.id);
+    const wall = surfaces[0].id;
+    const make = (body: string) => ({
+      surface_id: wall,
+      owner_id: "user-1",
+      u: 0.5,
+      v: 0.5,
+      width_cm: 12,
+      height_cm: 9,
+      body,
+      color_id: "warm-white",
+      bookmarked: false,
+    });
+
+    const saved = await repo.insertNotes([make("a"), make("b"), make("c")]);
+    expect(saved.map((n) => n.body)).toEqual(["a", "b", "c"]);
+    // Distinct ids, all present on the Room.
+    expect(new Set(saved.map((n) => n.id)).size).toBe(3);
+    const fromRoom = await repo.listNotes(room.id);
+    expect(fromRoom).toHaveLength(3);
+  });
+
+  it("insertNotes([]) is a no-op returning an empty array", async () => {
+    const repo = new InMemoryCanvasRepository();
+    const saved = await repo.insertNotes([]);
+    expect(saved).toEqual([]);
+  });
+
   it("updateNotePin moves a Note to a different Surface and (u, v)", async () => {
     const repo = new InMemoryCanvasRepository();
     const room = await repo.insertRoom("user-1", "Room");
