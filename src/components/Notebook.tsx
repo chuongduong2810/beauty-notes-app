@@ -438,6 +438,22 @@ function NotebookSpread({
             <span className="nb-tab__icon" aria-hidden="true">📋</span>
             <span className="nb-tab__label">Room Ledger</span>
           </button>
+          {/* Membership tab (issue #105) — always on the left page so it's
+              reachable in ANY room/note state, independent of the right
+              page's note-list overflow (the ledger's Membership row could be
+              pushed off when a room has many notes). */}
+          <button
+            type="button"
+            className={
+              "notebook-tab" +
+              (view === "membership" ? " notebook-tab--active" : "")
+            }
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setView("membership")}
+          >
+            <span className="nb-tab__icon" aria-hidden="true">✦</span>
+            <span className="nb-tab__label">Membership</span>
+          </button>
           <button
             type="button"
             className={

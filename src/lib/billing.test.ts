@@ -56,6 +56,9 @@ describe("getBillingProvider selection (issue #106, ADR-0023)", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("returns the mock when Stripe is not enabled", () => {
+    // Stub explicitly so the result doesn't depend on the ambient
+    // VITE_STRIPE_ENABLED in .env.local (which may be "true" in dev).
+    vi.stubEnv("VITE_STRIPE_ENABLED", "false");
     expect(getBillingProvider()).toBe(mockBillingProvider);
   });
 
