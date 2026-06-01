@@ -1233,6 +1233,33 @@
       }
       .nb-back:hover { background: rgba(231, 168, 64, 0.22); }
 
+      /* Restore edge states (issue #85): "no room found" + send failure.
+         Reuses the restore spread's warm palette and the shared CTA / back
+         buttons; only the centred mark + soft copy are new. */
+      .nb-empty, .nb-error {
+        align-items: center;
+        text-align: center;
+      }
+      .nb-empty .nb-claim__cta, .nb-error .nb-claim__cta { align-self: center; }
+      .nb-empty__mark, .nb-error__mark {
+        font-size: 56px;
+        margin: 6px 0 10px;
+      }
+      .nb-empty__copy, .nb-error__copy {
+        font-size: 13px;
+        color: #5b4326;
+        line-height: 1.55;
+        margin: 0 0 16px;
+      }
+      .nb-error__detail {
+        font-size: 12px;
+        font-style: italic;
+        color: #9a3b1c;
+        line-height: 1.4;
+        margin: 0 0 16px;
+        word-break: break-word;
+      }
+
       /* Ownership certificate (stage 4). */
       .nb-cert-left { height: 100%; }
       .nb-cert-left__frame {

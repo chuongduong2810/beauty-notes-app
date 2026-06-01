@@ -125,6 +125,9 @@ type ClaimStatus = "idle" | "sending" | "sent" | "claimed" | "error";
  *  - "selecting": the account owns more than one Room — the Notebook is
  *    showing the "Your Rooms" selection page (issue #83). `restorableRooms`
  *    holds the candidates.
+ *  - "empty": the magic-link return resolved to an account that owns NO
+ *    Rooms — the Notebook shows a gentle "no room found" page (issue #85).
+ *    Nothing is loaded and no empty Room is auto-created.
  *  - "done": the return has been fully handled.
  *  - "error": the send failed; see `restoreError`.
  * The Notebook restore UI codes against these exact names.
@@ -135,6 +138,7 @@ type RestoreStatus =
   | "sent"
   | "restoring"
   | "selecting"
+  | "empty"
   | "done"
   | "error";
 
@@ -252,8 +256,10 @@ type AppState = {
    * the single-room case, loads the one Room via the existing room-load
    * path (`switchRoom`). For more than one Room it populates
    * `restorableRooms` and flips to "selecting" so the Notebook shows the
-   * "Your Rooms" page (issue #83). The zero-room case is out of this slice
-   * (issue #85). Clears the auth-intent when done. */
+   * "Your Rooms" page (issue #83). The zero-room case flips to "empty" so
+   * the Notebook shows a gentle "no room found" page — nothing is loaded and
+   * no empty Room is auto-created (issue #85). Clears the auth-intent when
+   * done. */
   completeRestore: () => Promise<void>;
   /**
    * Restore into a chosen Room from the "Your Rooms" selection page (issue
@@ -428,14 +434,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Single-room case: fly straight into the one Room via the existing
     // room-load path (switchRoom). More than one Room: stash the candidates
     // and flip to "selecting" so the Notebook shows the "Your Rooms" page
-    // (issue #83). The zero-room case is out of scope here — issue #85.
+    // (issue #83). Zero Rooms: flip to "empty" so the Notebook shows a gentle
+    // "no room found" page — we must NOT auto-create an empty Room (issue #85).
     if (rooms.length === 1) {
       await get().switchRoom(rooms[0].id);
       set({ restoreStatus: "done" });
     } else if (rooms.length > 1) {
       set({ restorableRooms: rooms, restoreStatus: "selecting" });
     } else {
-      set({ restoreStatus: "done" }); // issue #85 (zero rooms)
+      set({ restoreStatus: "empty" });
     }
     clearAuthIntent();
   },
