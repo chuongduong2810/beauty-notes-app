@@ -13,6 +13,7 @@ import {
   type NotebookSectionKey,
 } from "../lib/notebook-sections";
 import { buildRoomLedger } from "../lib/room-ledger";
+import type { Room } from "../lib/room";
 import { paletteEntry } from "../lib/palette";
 import { useAppStore } from "../store";
 import { HoverTooltip } from "./HoverTooltip";
@@ -41,9 +42,20 @@ function useOwnershipStore<T>(selector: (slice: OwnershipStoreSlice) => T): T {
  * read-only here. Field/method names match the #82 contract verbatim.
  */
 type RestoreStoreSlice = {
-  restoreStatus: "idle" | "sending" | "sent" | "restoring" | "done" | "error";
+  restoreStatus:
+    | "idle"
+    | "sending"
+    | "sent"
+    | "restoring"
+    | "selecting"
+    | "done"
+    | "error";
   restoreError: string | null;
+  /** Candidate Rooms for the "Your Rooms" selection page (issue #83). */
+  restorableRooms: Room[];
   sendRestoreLink: (email: string) => Promise<void>;
+  /** Load the chosen Room and finish the restore flow (issue #83). */
+  restoreIntoRoom: (roomId: string) => Promise<void>;
   resetRestore: () => void;
 };
 
@@ -184,7 +196,9 @@ function NotebookSpread({
   const resetClaim = useOwnershipStore((s) => s.resetClaim);
   const restoreStatus = useRestoreStore((s) => s.restoreStatus);
   const restoreError = useRestoreStore((s) => s.restoreError);
+  const restorableRooms = useRestoreStore((s) => s.restorableRooms);
   const sendRestoreLink = useRestoreStore((s) => s.sendRestoreLink);
+  const restoreIntoRoom = useRestoreStore((s) => s.restoreIntoRoom);
   const resetRestore = useRestoreStore((s) => s.resetRestore);
 
   const isGuest = session?.user.is_anonymous ?? true;
@@ -242,6 +256,13 @@ function NotebookSpread({
   const submitRestore = () => {
     if (!emailValid || restoreStatus === "sending") return;
     void sendRestoreLink(email.trim());
+  };
+
+  // Choose a Room from the "Your Rooms" page (issue #83): load it, then
+  // close the book to fly in — mirrors how the ledger's note rows navigate.
+  const chooseRoom = (roomId: string) => {
+    void restoreIntoRoom(roomId);
+    onClose();
   };
 
   const backToRoom = () => {
@@ -478,9 +499,58 @@ function NotebookSpread({
     );
   } else if (view === "restore") {
     // ── Restore flow (full spread, issue #82 / ADR-0019): stage 2 form,
-    // or stage 3 letter sent. Mirrors the Claim spread's structure. ─────
+    // stage 3 letter sent, or the "Your Rooms" selection page when the
+    // restored account owns more than one Room (issue #83). Mirrors the
+    // Claim spread's structure. ─────────────────────────────────────────
     const sent = restoreStatus === "sent" || restoreStatus === "sending";
-    if (sent) {
+    if (restoreStatus === "selecting") {
+      // ── Stage: "Your Rooms" — pick which Room to fly into (issue #83). ──
+      leftBody = (
+        <div className="nb-claim-left">
+          <div className="nb-claim-left__title">
+            Your
+            <br />
+            Rooms
+          </div>
+          <div className="nb-claim-left__rule" />
+          <p className="nb-claim-left__copy">
+            We found more than one room for this account. Choose the one
+            you&apos;d like to step into.
+          </p>
+          <div className="nb-deco">
+            <span className="nb-deco__key" aria-hidden="true">🗝️</span>
+            <span className="nb-deco__seal" aria-hidden="true">🚪</span>
+            <span className="nb-deco__tag">Restore</span>
+          </div>
+        </div>
+      );
+      rightBody = (
+        <div className="nb-flow-right">
+          <div className="notebook-page__title">Pick a Room</div>
+          <div className="notebook-list">
+            {restorableRooms.map((room) => (
+              <button
+                key={room.id}
+                type="button"
+                className="notebook-entry"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => chooseRoom(room.id)}
+              >
+                <span className="notebook-entry__swatch nb-room-swatch" aria-hidden="true">
+                  🚪
+                </span>
+                <span className="notebook-entry__text">
+                  {room.name?.trim() || "Untitled Room"}
+                </span>
+                <span className="notebook-entry__time">
+                  {timeAgo(room.updated_at)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    } else if (sent) {
       leftBody = (
         <div className="nb-claim-left nb-sent-left">
           <p className="nb-sent-left__title">
@@ -765,6 +835,17 @@ export function Notebook({
       setView("certificate");
     }
   }, [claimStatus]);
+
+  // Auto-reveal on a multi-room restore return (issue #83): open the book
+  // and turn to the restore spread, which shows the "Your Rooms" page while
+  // `restoreStatus === "selecting"`.
+  const restoreStatus = useRestoreStore((s) => s.restoreStatus);
+  useEffect(() => {
+    if (restoreStatus === "selecting") {
+      setOpen(true);
+      setView("restore");
+    }
+  }, [restoreStatus]);
 
   // Escape closes the open book.
   useEffect(() => {

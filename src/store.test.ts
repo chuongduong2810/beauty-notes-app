@@ -211,14 +211,39 @@ describe("store — restore flow (issue #82, ADR-0019)", () => {
     expect(window.localStorage.getItem("bn.auth-intent")).toBeNull();
   });
 
-  it("completeRestore is 'done' without loading on 0 or >1 Rooms (issues #83/#85)", async () => {
+  it("completeRestore flips to 'selecting' with the candidate Rooms on >1 Room (issue #83)", async () => {
+    window.localStorage.setItem("bn.auth-intent", "restore");
+    const candidates = [
+      { id: "a", name: "Studio" } as unknown as Room,
+      { id: "b", name: "Workshop" } as unknown as Room,
+    ];
+    const repo = {
+      async listRooms() {
+        return candidates;
+      },
+    } as unknown as CanvasRepository;
+
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "u1" } } as never,
+      currentRoom: null,
+      restorableRooms: [],
+    });
+
+    await useAppStore.getState().completeRestore();
+
+    // No auto-load: the User chooses on the "Your Rooms" page.
+    expect(useAppStore.getState().restoreStatus).toBe("selecting");
+    expect(useAppStore.getState().restorableRooms).toEqual(candidates);
+    expect(useAppStore.getState().currentRoom).toBeNull();
+    expect(window.localStorage.getItem("bn.auth-intent")).toBeNull();
+  });
+
+  it("completeRestore is 'done' without loading on 0 Rooms (issue #85)", async () => {
     window.localStorage.setItem("bn.auth-intent", "restore");
     const repo = {
       async listRooms() {
-        return [
-          { id: "a" } as unknown as Room,
-          { id: "b" } as unknown as Room,
-        ];
+        return [];
       },
     } as unknown as CanvasRepository;
 
@@ -232,6 +257,42 @@ describe("store — restore flow (issue #82, ADR-0019)", () => {
 
     expect(useAppStore.getState().restoreStatus).toBe("done");
     expect(useAppStore.getState().currentRoom).toBeNull();
+  });
+
+  it("restoreIntoRoom loads the chosen Room and clears the candidates (issue #83)", async () => {
+    const studio = { id: "a", name: "Studio" } as unknown as Room;
+    const chosen = { id: "b", name: "Workshop" } as unknown as Room;
+    let loadedRoomId: string | null = null;
+    const repo = {
+      async listSurfaces(roomId: string) {
+        loadedRoomId = roomId;
+        return [{ id: "s1", owner_id: "u1" }];
+      },
+      async listRooms() {
+        return [studio, chosen];
+      },
+      async listNotes() {
+        return [];
+      },
+      async listAnnotations() {
+        return [];
+      },
+    } as unknown as CanvasRepository;
+
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "u1" } } as never,
+      currentRoom: null,
+      restoreStatus: "selecting",
+      restorableRooms: [studio, chosen],
+    });
+
+    await useAppStore.getState().restoreIntoRoom("b");
+
+    expect(loadedRoomId).toBe("b");
+    expect(useAppStore.getState().currentRoom?.id).toBe("b");
+    expect(useAppStore.getState().restoreStatus).toBe("done");
+    expect(useAppStore.getState().restorableRooms).toEqual([]);
   });
 
   it("resetRestore returns to idle and clears the error", () => {
