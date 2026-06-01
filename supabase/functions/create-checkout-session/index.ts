@@ -51,6 +51,11 @@ Deno.serve(async (req) => {
 
     // Return to the same Room the User upgraded from (brief: "Return to Room").
     const returnUrl = `${origin}/room/${roomId}`;
+    // Anonymous (guest) Users have an empty/absent email — `??` would let an
+    // empty string through and Stripe rejects "Invalid email address: ". Only
+    // prefill when it's a real address; otherwise Checkout collects one.
+    const email =
+      user.email && user.email.includes("@") ? user.email : undefined;
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [{ price, quantity: 1 }],
@@ -58,7 +63,7 @@ Deno.serve(async (req) => {
       cancel_url: returnUrl,
       // The webhook reads these to attribute the subscription to the owner.
       client_reference_id: user.id,
-      customer_email: user.email ?? undefined,
+      customer_email: email,
       subscription_data: { metadata: { owner_id: user.id } },
     });
 
