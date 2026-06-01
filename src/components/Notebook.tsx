@@ -368,14 +368,27 @@ function NotebookSpread({
   // notebook (that slammed the book shut on click) and do NOT re-read the
   // membership here: the mock never writes the DB, so a re-read would revert
   // the optimistic upgrade back to Explorer.
+  // Which paid Plan's checkout is in flight, so the "Move in" buttons show a
+  // loading state (the real provider does an async round-trip to the Edge
+  // Function before redirecting). Cleared on the mock's in-process resolve or
+  // on error; the real path navigates away so it never needs clearing.
+  const [checkoutTier, setCheckoutTier] = useState<Exclude<
+    Tier,
+    "explorer"
+  > | null>(null);
   const choosePlan = (tier: Exclude<Tier, "explorer">) => {
+    if (checkoutTier) return; // a checkout is already in flight
+    setCheckoutTier(tier);
     void getBillingProvider()
       .startCheckout(tier)
       .then((result) => {
         if (result && typeof window !== "undefined") {
           window.location.assign(result.url);
+          return; // redirecting away — keep the loading state
         }
-      });
+        setCheckoutTier(null);
+      })
+      .catch(() => setCheckoutTier(null));
   };
 
   const backToRoom = () => {
@@ -438,22 +451,24 @@ function NotebookSpread({
             <span className="nb-tab__icon" aria-hidden="true">📋</span>
             <span className="nb-tab__label">Room Ledger</span>
           </button>
-          {/* Membership tab (issue #105) — always on the left page so it's
-              reachable in ANY room/note state, independent of the right
-              page's note-list overflow (the ledger's Membership row could be
-              pushed off when a room has many notes). */}
-          <button
-            type="button"
-            className={
-              "notebook-tab" +
-              (view === "membership" ? " notebook-tab--active" : "")
-            }
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setView("membership")}
-          >
-            <span className="nb-tab__icon" aria-hidden="true">✦</span>
-            <span className="nb-tab__label">Membership</span>
-          </button>
+          {/* Membership tab (issue #105) — claimed-only: a Membership ties to
+              a durable account, so guests Claim first (the page is hidden for
+              them). On the left page so it's reachable in any room/note state
+              once claimed, independent of the right page's note overflow. */}
+          {claimed && (
+            <button
+              type="button"
+              className={
+                "notebook-tab" +
+                (view === "membership" ? " notebook-tab--active" : "")
+              }
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setView("membership")}
+            >
+              <span className="nb-tab__icon" aria-hidden="true">✦</span>
+              <span className="nb-tab__label">Membership</span>
+            </button>
+          )}
           <button
             type="button"
             className={
@@ -522,17 +537,19 @@ function NotebookSpread({
               )}
             </div>
           </div>
-          {/* Membership entry (issue #105) — open to everyone, since this is
-              how you expand your space. Framed as more room, never a paywall. */}
-          <button
-            type="button"
-            className="nb-ledger__membership"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setView("membership")}
-          >
-            <span aria-hidden="true">✦</span> Membership — expand your space{" "}
-            <span aria-hidden="true">→</span>
-          </button>
+          {/* Membership entry (issue #105) — claimed-only: a Membership ties
+              to a durable account, so guests Claim first. */}
+          {claimed && (
+            <button
+              type="button"
+              className="nb-ledger__membership"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setView("membership")}
+            >
+              <span aria-hidden="true">✦</span> Membership — expand your space{" "}
+              <span aria-hidden="true">→</span>
+            </button>
+          )}
           {claimed ? (
             <button
               type="button"
@@ -643,7 +660,7 @@ function NotebookSpread({
         </button>
       </div>
     );
-    rightBody = (
+    rightBody = claimed ? (
       <div className="nb-flow-right nb-plans">
         <div className="notebook-page__title">Choose a Plan</div>
         {PLAN_CARDS.map((plan) => {
@@ -664,12 +681,13 @@ function NotebookSpread({
                   <button
                     type="button"
                     className="nb-plan__cta"
+                    disabled={checkoutTier !== null}
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={() =>
                       choosePlan(plan.tier as Exclude<Tier, "explorer">)
                     }
                   >
-                    Move in
+                    {checkoutTier === plan.tier ? "Moving in…" : "Move in"}
                   </button>
                 )}
               </div>
@@ -678,6 +696,32 @@ function NotebookSpread({
             </div>
           );
         })}
+      </div>
+    ) : (
+      // Defensive: Membership entry points are hidden for guests, but if one
+      // lands here, guide them to Claim rather than show Plans.
+      <div className="nb-flow-right">
+        <div className="notebook-page__title">Membership</div>
+        <p className="nb-claim__hint">
+          A Membership lives with a claimed room. Claim this room first, then
+          you can expand your space.
+        </p>
+        <button
+          type="button"
+          className="nb-claim__cta"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setView("claim")}
+        >
+          Claim This Room
+        </button>
+        <button
+          type="button"
+          className="nb-back"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={backToRoom}
+        >
+          ← Back to Room
+        </button>
       </div>
     );
   } else if (view === "certificate") {
