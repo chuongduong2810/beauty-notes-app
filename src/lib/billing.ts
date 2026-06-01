@@ -17,19 +17,19 @@ import { supabase } from "./supabase";
 
 /**
  * The seam the Membership UI calls to start an upgrade. `startCheckout` takes a
- * *paid* Plan (Explorer is the free baseline and is never "bought") and, for a
- * real provider, resolves with the hosted-checkout `{ url }` the client
- * redirects to (ADR-0023). The mock resolves with `void` — it has no redirect.
+ * *paid* Plan (Explorer is the free baseline and is never "bought"). It resolves
+ * with no value; the side effect differs by provider (ADR-0023): the real Stripe
+ * provider opens the in-app Embedded Checkout modal (sets the store's
+ * `checkoutClientSecret`); the mock flips membership in place. The caller just
+ * awaits to clear its loading state.
  */
 export type BillingProvider = {
   /**
    * Begin checkout for a paid Plan.
    *
    * @param tier - the paid Plan to subscribe to (`resident` or `studio`).
-   * @returns `{ url }` to redirect to (real provider), or `void` when the flow
-   *   completed in-process (the mock).
    */
-  startCheckout(tier: Exclude<Tier, "explorer">): Promise<{ url: string } | void>;
+  startCheckout(tier: Exclude<Tier, "explorer">): Promise<void>;
 };
 
 /**
@@ -73,16 +73,18 @@ export const mockBillingProvider: BillingProvider = {
  */
 export const stripeBillingProvider: BillingProvider = {
   async startCheckout(tier) {
-    const roomId = useAppStore.getState().currentRoom?.id ?? "";
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
     const { data, error } = await supabase.functions.invoke(
       "create-checkout-session",
-      { body: { tier, roomId, origin } },
+      { body: { tier } },
     );
     if (error) throw error;
-    const url = (data as { url?: string } | null)?.url;
-    if (!url) throw new Error("create-checkout-session returned no URL");
-    return { url };
+    const clientSecret = (data as { clientSecret?: string } | null)
+      ?.clientSecret;
+    if (!clientSecret) {
+      throw new Error("create-checkout-session returned no client secret");
+    }
+    // Open the in-app Embedded Checkout modal — App renders it from the store.
+    useAppStore.setState({ checkoutClientSecret: clientSecret });
   },
 };
 
