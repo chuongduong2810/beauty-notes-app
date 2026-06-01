@@ -48,6 +48,7 @@ type RestoreStoreSlice = {
     | "sent"
     | "restoring"
     | "selecting"
+    | "empty"
     | "done"
     | "error";
   restoreError: string | null;
@@ -275,6 +276,14 @@ function NotebookSpread({
     resetRestore();
     setRestoreConsented(false);
     onClose();
+  };
+
+  // Retry a failed send (issue #85): reset the restore flow back to "idle"
+  // (clearing the soft error) but stay on the restore spread so the User
+  // lands on the email form again rather than being kicked back to the Room.
+  const tryRestoreAgain = () => {
+    resetRestore();
+    setRestoreConsented(false);
   };
 
   // Re-mounts both pages on any view/stage change so the page-turn
@@ -506,8 +515,10 @@ function NotebookSpread({
   } else if (view === "restore") {
     // ── Restore flow (full spread, issue #82 / ADR-0019): stage 2 form,
     // stage 3 letter sent, or the "Your Rooms" selection page when the
-    // restored account owns more than one Room (issue #83). Mirrors the
-    // Claim spread's structure. ─────────────────────────────────────────
+    // restored account owns more than one Room (issue #83). The unhappy
+    // paths (issue #85) add a "no room found" page (zero Rooms) and a
+    // friendly, retryable send-failure page. Mirrors the Claim spread's
+    // structure. ────────────────────────────────────────────────────────
     const sent = restoreStatus === "sent" || restoreStatus === "sending";
     if (restoreStatus === "selecting") {
       // ── Stage: "Your Rooms" — pick which Room to fly into (issue #83). ──
@@ -554,6 +565,106 @@ function NotebookSpread({
               </button>
             ))}
           </div>
+        </div>
+      );
+    } else if (restoreStatus === "empty") {
+      // ── Stage: "no room found" — the account owns zero Rooms (issue #85).
+      // A gentle dead-end: nothing was loaded and no empty Room was created;
+      // offer a way back / to try a different email. ──────────────────────
+      leftBody = (
+        <div className="nb-claim-left nb-empty-left">
+          <div className="nb-claim-left__title">
+            No Room
+            <br />
+            Found
+          </div>
+          <div className="nb-claim-left__rule" />
+          <p className="nb-claim-left__copy">
+            This mailbox isn&apos;t holding a room just yet — nothing was
+            opened, and nothing was changed.
+          </p>
+          <div className="nb-deco">
+            <span className="nb-deco__key" aria-hidden="true">🗝️</span>
+            <span className="nb-deco__seal" aria-hidden="true">🚪</span>
+            <span className="nb-deco__tag">Restore</span>
+          </div>
+        </div>
+      );
+      rightBody = (
+        <div className="nb-flow-right nb-empty">
+          <div className="notebook-page__title">We couldn&apos;t find a room</div>
+          <span className="nb-empty__mark" aria-hidden="true">🕯️</span>
+          <p className="nb-empty__copy">
+            We couldn&apos;t find a room for that email. If you claimed a room
+            with a different address, try that one instead.
+          </p>
+          <button
+            type="button"
+            className="nb-claim__cta"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={tryRestoreAgain}
+          >
+            Try a different email
+          </button>
+          <button
+            type="button"
+            className="nb-back"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={backToRoom}
+          >
+            ← Back to Room
+          </button>
+        </div>
+      );
+    } else if (restoreStatus === "error") {
+      // ── Stage: send failure (issue #85) — a friendly, retryable error.
+      // Show the reason softly and let the User hop back to the email form
+      // (tryRestoreAgain resets to "idle" without leaving the spread). ─────
+      leftBody = (
+        <div className="nb-claim-left nb-error-left">
+          <div className="nb-claim-left__title">
+            Something
+            <br />
+            Slipped
+          </div>
+          <div className="nb-claim-left__rule" />
+          <p className="nb-claim-left__copy">
+            The letter didn&apos;t make it out this time. No rooms were
+            touched — you can try again in a moment.
+          </p>
+          <div className="nb-deco">
+            <span className="nb-deco__key" aria-hidden="true">🗝️</span>
+            <span className="nb-deco__seal" aria-hidden="true">🚪</span>
+            <span className="nb-deco__tag">Restore</span>
+          </div>
+        </div>
+      );
+      rightBody = (
+        <div className="nb-flow-right nb-error">
+          <div className="notebook-page__title">We couldn&apos;t send it</div>
+          <span className="nb-error__mark" aria-hidden="true">✉️</span>
+          <p className="nb-error__copy">
+            We couldn&apos;t send your letter just now. Please try again.
+          </p>
+          {restoreError && (
+            <p className="nb-error__detail">{restoreError}</p>
+          )}
+          <button
+            type="button"
+            className="nb-claim__cta"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={tryRestoreAgain}
+          >
+            Try Again
+          </button>
+          <button
+            type="button"
+            className="nb-back"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={backToRoom}
+          >
+            ← Back to Room
+          </button>
         </div>
       );
     } else if (sent) {
@@ -647,9 +758,6 @@ function NotebookSpread({
               <span>I understand — clear my guest rooms and reopen my room.</span>
             </label>
           </div>
-          {restoreStatus === "error" && restoreError && (
-            <div className="notebook-claim__error">{restoreError}</div>
-          )}
           <button
             type="button"
             className="nb-claim__cta"
@@ -861,12 +969,14 @@ export function Notebook({
     }
   }, [claimStatus]);
 
-  // Auto-reveal on a multi-room restore return (issue #83): open the book
-  // and turn to the restore spread, which shows the "Your Rooms" page while
-  // `restoreStatus === "selecting"`.
+  // Auto-reveal on a restore return that needs the User's attention: a
+  // multi-room return shows the "Your Rooms" page (issue #83, "selecting"),
+  // and a zero-room return shows the "no room found" page (issue #85,
+  // "empty"). Both can land while the book is shut, so open it and turn to
+  // the restore spread.
   const restoreStatus = useRestoreStore((s) => s.restoreStatus);
   useEffect(() => {
-    if (restoreStatus === "selecting") {
+    if (restoreStatus === "selecting" || restoreStatus === "empty") {
       setOpen(true);
       setView("restore");
     }

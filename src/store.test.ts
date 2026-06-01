@@ -276,24 +276,33 @@ describe("store — restore flow (issue #82, ADR-0019)", () => {
     expect(window.localStorage.getItem("bn.auth-intent")).toBeNull();
   });
 
-  it("completeRestore is 'done' without loading on 0 Rooms (issue #85)", async () => {
+  it("completeRestore flips to 'empty' on 0 Rooms without loading or auto-creating (issue #85)", async () => {
     window.localStorage.setItem("bn.auth-intent", "restore");
+    const insertRoom = vi.fn();
     const repo = {
       async listRooms() {
         return [];
       },
+      // Should never be reached — the zero-room path must NOT mint a Room.
+      insertRoom,
     } as unknown as CanvasRepository;
 
     useAppStore.setState({
       repo,
       session: { user: { id: "u1" } } as never,
       currentRoom: null,
+      restorableRooms: [],
     });
 
     await useAppStore.getState().completeRestore();
 
-    expect(useAppStore.getState().restoreStatus).toBe("done");
+    // Drives the "no room found" page: no Room loaded, none auto-created,
+    // no Claim certificate, and the auth-intent is cleared.
+    expect(useAppStore.getState().restoreStatus).toBe("empty");
     expect(useAppStore.getState().currentRoom).toBeNull();
+    expect(useAppStore.getState().restorableRooms).toEqual([]);
+    expect(insertRoom).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("bn.auth-intent")).toBeNull();
   });
 
   it("restoreIntoRoom loads the chosen Room and clears the candidates (issue #83)", async () => {
