@@ -127,10 +127,15 @@ export function RoomPicker() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Focus + select the rename input when editing begins.
+  // Focus + select the rename input ONCE when editing begins. Gating on the
+  // boolean "are we renaming?" (not on `renameDraft` itself) is deliberate:
+  // depending on the draft string re-ran `.select()` on every keystroke, which
+  // re-selected the whole field so the very next character overwrote it — you
+  // could never type past one character.
+  const isRenaming = renameDraft !== null;
   useEffect(() => {
-    if (renameDraft !== null) inputRef.current?.select();
-  }, [renameDraft]);
+    if (isRenaming) inputRef.current?.select();
+  }, [isRenaming]);
 
   // Click outside closes the dropdown.
   useEffect(() => {
