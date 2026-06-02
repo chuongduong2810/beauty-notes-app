@@ -50,6 +50,7 @@ import {
 } from "./lib/ambient-audio";
 import type { RoomCustomizationPatch } from "./lib/canvas-repository";
 import type { Annotation, Stroke, StrokePoint } from "./lib/stroke";
+import { ERASER_RADIUS_UV, strokeHitByEraser } from "./lib/stroke-hit";
 
 /** Tiny non-cryptographic id for optimistic Annotation / Stroke rows
  *  that exist in local state before the repo round-trip resolves. */
@@ -623,6 +624,24 @@ type AppState = {
   beginStroke: (surface_id: string, point: StrokePoint) => void;
   appendStrokePoint: (point: StrokePoint) => void;
   commitStroke: () => Promise<void>;
+  /**
+   * Erase whole Strokes under the eraser at `(u, v)` on the given Surface
+   * (Eraser tool, issue #132). Hit-tests every Stroke on that Surface's
+   * Annotations with `strokeHitByEraser` (whole-Stroke granularity — no
+   * pixel/segment splitting) and, for each hit, optimistically removes the
+   * Stroke from its Annotation's `strokes` then `await repo.deleteStroke(id)`,
+   * rolling that Stroke back (and `console.warn`) on failure — mirroring
+   * `deleteNote`'s optimistic-then-rollback. Skips optimistic/in-progress ids
+   * (`pending-` / `in-progress`) since they have no persisted row yet. An
+   * Annotation emptied of its last Stroke is left in place (it renders
+   * nothing); no `deleteAnnotation`. No-op for the persistence step without a
+   * repo (the optimistic local removal still happens).
+   *
+   * @param surface_id - the Surface whose Annotations to scan.
+   * @param u - the eraser's normalized horizontal coordinate (0..1).
+   * @param v - the eraser's normalized vertical coordinate (0..1).
+   */
+  eraseStrokeAt: (surface_id: string, u: number, v: number) => Promise<void>;
 
   createNoteAt: (surfaceId: string, u: number, v: number) => Promise<void>;
 
@@ -1284,6 +1303,60 @@ export const useAppStore = create<AppState>((set, get) => ({
           : s.penSessionAnnotations,
       }));
     }
+  },
+
+  eraseStrokeAt: async (surface_id, u, v) => {
+    const { annotations, repo } = get();
+    const eraser = { u, v };
+    // Collect every persisted Stroke on this Surface that the eraser
+    // touches. Skip optimistic ids (`pending-` / `in-progress`) — they
+    // have no repo row to delete yet, and the pen flow owns their lifecycle.
+    const hits: { annotationId: string; stroke: Stroke }[] = [];
+    for (const a of annotations) {
+      if (a.surface_id !== surface_id) continue;
+      for (const stroke of a.strokes) {
+        if (stroke.id.startsWith("pending-") || stroke.id === "in-progress") {
+          continue;
+        }
+        if (strokeHitByEraser(stroke.points, eraser, ERASER_RADIUS_UV)) {
+          hits.push({ annotationId: a.id, stroke });
+        }
+      }
+    }
+    if (hits.length === 0) return;
+
+    // Optimistically remove the hit Strokes from local state so they
+    // vanish under the cursor immediately. An Annotation emptied of its
+    // last Stroke is left in place — it simply renders nothing.
+    const hitIds = new Set(hits.map((h) => h.stroke.id));
+    set((s) => ({
+      annotations: s.annotations.map((a) =>
+        a.surface_id === surface_id
+          ? { ...a, strokes: a.strokes.filter((st) => !hitIds.has(st.id)) }
+          : a,
+      ),
+    }));
+
+    if (!repo) return;
+
+    // Persist each deletion; on failure restore that one Stroke (rollback),
+    // mirroring deleteNote's per-row optimistic-then-rollback.
+    await Promise.all(
+      hits.map(async ({ annotationId, stroke }) => {
+        try {
+          await repo.deleteStroke(stroke.id);
+        } catch (err) {
+          console.warn("eraseStrokeAt deleteStroke failed; rolling back", err);
+          set((s) => ({
+            annotations: s.annotations.map((a) =>
+              a.id === annotationId
+                ? { ...a, strokes: [...a.strokes, stroke] }
+                : a,
+            ),
+          }));
+        }
+      }),
+    );
   },
 
   createNoteAt: async (surfaceId, u, v) => {
