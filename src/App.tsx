@@ -470,6 +470,12 @@ export function App() {
   // dragging a Note across Surfaces, a stray drag-orbit would fight the
   // re-Pin gesture and spin the camera. Lock orbit until the drag commits.
   const draggingNote = useAppStore((s) => s.drag !== null);
+  // Same rationale for an active Eraser drag (issue #132): an erase gesture is
+  // a continuous drag across a wall, so a stray drag-orbit would spin the
+  // camera mid-erase. `eraseSnapshot` is non-null exactly between the eraser
+  // pointer-down (beginErase) and pointer-up (commitErase), so it marks the
+  // drag — lock orbit while it's set.
+  const erasing = useAppStore((s) => s.eraseSnapshot !== null);
   // Pen and Eraser both put a tool "in hand" with its own on-wall 3D cursor
   // (the pen prop / the eraser ring), so the OS cursor is hidden for either.
   const toolCursorHidden = useAppStore(
@@ -481,8 +487,8 @@ export function App() {
     const c = orbitRef.current;
     if (!c) return;
     if (focusedNoteId || beforeFocus) return;
-    c.enabled = !drawingStroke && !draggingNote;
-  }, [drawingStroke, draggingNote, focusedNoteId, beforeFocus]);
+    c.enabled = !drawingStroke && !draggingNote && !erasing;
+  }, [drawingStroke, draggingNote, erasing, focusedNoteId, beforeFocus]);
 
   // Escape exits focus.
   useEffect(() => {
