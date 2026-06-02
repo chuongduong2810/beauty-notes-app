@@ -138,6 +138,7 @@ export function RoomScene({
   const appendStrokePoint = useAppStore((s) => s.appendStrokePoint);
   const commitStroke = useAppStore((s) => s.commitStroke);
   const setPenHoverPoint = useAppStore((s) => s.setPenHoverPoint);
+  const eraseStrokeAt = useAppStore((s) => s.eraseStrokeAt);
 
   const surfaceMeshes = useRef<Map<string, Mesh>>(new Map());
   const trashMeshRef = useRef<Mesh | null>(null);
@@ -145,6 +146,11 @@ export function RoomScene({
   /** Wall clock at the start of the active Pen Stroke — used to compute
    *  `t` (ms since gesture started) for each appended point. */
   const penStrokeStart = useRef<number>(0);
+  /** Surface id of the in-flight Eraser drag (issue #132), or null when
+   *  not erasing. Separate from the pen's `inProgressStroke` — the eraser
+   *  carries no in-progress Stroke; it just deletes whole Strokes under
+   *  the cursor on down and on each move while the button is held. */
+  const [erasingSurfaceId, setErasingSurfaceId] = useState<string | null>(null);
   const { camera, gl } = useThree();
   const raycaster = useMemo(() => new Raycaster(), []);
 
@@ -245,6 +251,38 @@ export function RoomScene({
     appendStrokePoint,
     commitStroke,
   ]);
+
+  // While an Eraser drag is active, drive window-level pointermove and
+  // pointerup (mirrors the in-progress-Stroke effect). Each move raycasts
+  // the Surface the drag began on and erases whole Strokes under the
+  // cursor; release ends the drag. Erasing is whole-Stroke (issue #132).
+  useEffect(() => {
+    if (!erasingSurfaceId) return;
+    const dom = gl.domElement;
+    const onMove = (e: PointerEvent) => {
+      const rect = dom.getBoundingClientRect();
+      const ndc = new Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, camera);
+      const mesh = surfaceMeshes.current.get(erasingSurfaceId);
+      if (!mesh) return;
+      const hits = raycaster.intersectObject(mesh, false);
+      const hit = hits[0];
+      if (!hit || !hit.uv) return;
+      void eraseStrokeAt(erasingSurfaceId, hit.uv.x, hit.uv.y);
+    };
+    const onUp = () => setErasingSurfaceId(null);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [erasingSurfaceId, camera, gl, raycaster, eraseStrokeAt]);
 
   // While in Pen mode but NOT actively drawing, track the cursor's
   // wall hit so the 3D pen-cursor (PenCursor) follows the mouse from
@@ -410,11 +448,19 @@ export function RoomScene({
         };
 
         const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
-          if (currentTool !== "pen") return;
+          if (currentTool !== "pen" && currentTool !== "eraser") return;
           if (!e.uv) return;
           if (e.object.userData.kind !== "surface") return;
           if (e.object.userData.surface_id !== s.id) return;
           e.stopPropagation();
+          if (currentTool === "eraser") {
+            // Erase immediately under the cursor, then begin an erase drag
+            // (the window-level effect erases on each move). Whole-Stroke
+            // granularity (issue #132).
+            void eraseStrokeAt(s.id, e.uv.x, e.uv.y);
+            setErasingSurfaceId(s.id);
+            return;
+          }
           penStrokeStart.current = performance.now();
           beginStroke(s.id, {
             u: e.uv.x,

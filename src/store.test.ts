@@ -857,3 +857,79 @@ describe("store — ambient soundscape (issue #128, ADR-0024)", () => {
     expect(useAppStore.getState().audioTrackId).toBe("forest");
   });
 });
+
+describe("store — eraseStrokeAt (Eraser tool, issue #132)", () => {
+  /** Seed one Annotation on `s1` carrying a single horizontal Stroke. */
+  function seedAnnotation() {
+    useAppStore.setState({
+      annotations: [
+        {
+          id: "a1",
+          surface_id: "s1",
+          owner_id: "u1",
+          strokes: [
+            {
+              id: "stroke-1",
+              annotation_id: "a1",
+              points: [
+                { u: 0.2, v: 0.5, p: 0.5, t: 0 },
+                { u: 0.8, v: 0.5, p: 0.5, t: 10 },
+              ],
+              color_id: "ink",
+              width_id: "fine",
+              index: 0,
+              created_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+  }
+
+  beforeEach(() => {
+    useAppStore.setState({ annotations: [], repo: null });
+  });
+
+  it("erases a hit Stroke and persists via repo.deleteStroke", async () => {
+    const deleteStroke = vi.fn(async () => {});
+    const repo = { deleteStroke } as unknown as CanvasRepository;
+    seedAnnotation();
+    useAppStore.setState({ repo });
+
+    // (0.5, 0.5) is the midpoint of the Stroke — a clear hit.
+    await useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.5);
+
+    expect(useAppStore.getState().annotations[0].strokes).toHaveLength(0);
+    expect(deleteStroke).toHaveBeenCalledWith("stroke-1");
+  });
+
+  it("leaves a Stroke untouched when the eraser misses", async () => {
+    const deleteStroke = vi.fn(async () => {});
+    const repo = { deleteStroke } as unknown as CanvasRepository;
+    seedAnnotation();
+    useAppStore.setState({ repo });
+
+    // Far from the horizontal Stroke at v=0.5.
+    await useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.95);
+
+    expect(useAppStore.getState().annotations[0].strokes).toHaveLength(1);
+    expect(deleteStroke).not.toHaveBeenCalled();
+  });
+
+  it("rolls the Stroke back when repo.deleteStroke throws", async () => {
+    const repo = {
+      async deleteStroke() {
+        throw new Error("offline");
+      },
+    } as unknown as CanvasRepository;
+    seedAnnotation();
+    useAppStore.setState({ repo });
+
+    await useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.5);
+
+    expect(useAppStore.getState().annotations[0].strokes).toHaveLength(1);
+    expect(useAppStore.getState().annotations[0].strokes[0].id).toBe("stroke-1");
+  });
+});
