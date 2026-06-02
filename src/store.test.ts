@@ -819,3 +819,31 @@ describe("store — createRoom multi-room gating (issue #109, ADR-0021)", () => 
     expect(repo.rooms.length).toBeGreaterThan(1);
   });
 });
+
+describe("store — ambient soundscape (issue #128, ADR-0024)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ audioEnabled: false, audioTrackId: "forest" });
+  });
+
+  it("opens silent on the default (forest) track", () => {
+    expect(useAppStore.getState().audioEnabled).toBe(false);
+    expect(useAppStore.getState().audioTrackId).toBe("forest");
+  });
+
+  it("toggleAudio flips the on/off flag", () => {
+    useAppStore.getState().toggleAudio();
+    expect(useAppStore.getState().audioEnabled).toBe(true);
+    useAppStore.getState().toggleAudio();
+    expect(useAppStore.getState().audioEnabled).toBe(false);
+  });
+
+  it("setAudioTrack switches to a valid track id", () => {
+    useAppStore.getState().setAudioTrack("music");
+    expect(useAppStore.getState().audioTrackId).toBe("music");
+  });
+
+  it("setAudioTrack ignores an unknown id (authoring guard)", () => {
+    useAppStore.getState().setAudioTrack("not-a-track");
+    expect(useAppStore.getState().audioTrackId).toBe("forest");
+  });
+});

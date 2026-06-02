@@ -44,6 +44,10 @@ import {
 } from "./lib/catalog";
 import { canCreateRoom } from "./lib/room-access";
 import { roomSizePresetById } from "./lib/room-size";
+import {
+  DEFAULT_AUDIO_TRACK_ID,
+  ambientTrackById,
+} from "./lib/ambient-audio";
 import type { RoomCustomizationPatch } from "./lib/canvas-repository";
 import type { Annotation, Stroke, StrokePoint } from "./lib/stroke";
 
@@ -413,6 +417,20 @@ type AppState = {
   editingNoteId: string | null;
   editingRect: ScreenRect | null;
 
+  /**
+   * Ambient soundscape on/off (ADR-0024, issue #128). The single
+   * User-controllable facet of the otherwise-fixed Weather (ADR-0015).
+   * Off by default so the Room opens silent; flipped on only by a user
+   * gesture (the speaker control) so the browser autoplay policy never
+   * blocks it. Session-only — NOT persisted, resets to silent on reload.
+   */
+  audioEnabled: boolean;
+  /**
+   * The chosen ambient track id (an {@link AMBIENT_TRACKS} id). Defaults to
+   * the forest track. Session-only like {@link audioEnabled} (ADR-0024).
+   */
+  audioTrackId: string;
+
   setSession: (session: Session | null) => void;
   setRepo: (repo: CanvasRepository) => void;
   /**
@@ -626,6 +644,22 @@ type AppState = {
 
   setEditingBody: (body: string) => void;
   setEditingRect: (rect: ScreenRect | null) => void;
+
+  /**
+   * Flip the ambient soundscape on/off (ADR-0024, issue #128). The first flip
+   * to `on` happens from a user gesture (the speaker control), satisfying the
+   * browser autoplay policy; AmbientAudio drives the actual play/pause off this
+   * flag. Session-only — nothing is persisted.
+   */
+  toggleAudio: () => void;
+  /**
+   * Choose the ambient track (ADR-0024, issue #128). Unknown ids are ignored
+   * via `ambientTrackById` as an authoring guard, exactly like
+   * `applyCustomization` ignores unknown Catalog items. Session-only.
+   *
+   * @param id - an {@link AMBIENT_TRACKS} id.
+   */
+  setAudioTrack: (id: string) => void;
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -671,6 +705,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   editingNoteId: null,
   editingRect: null,
+
+  audioEnabled: false,
+  audioTrackId: DEFAULT_AUDIO_TRACK_ID,
 
   setSession: (session) => set({ session }),
   setRepo: (repo) => set({ repo }),
@@ -1429,4 +1466,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setEditingRect: (rect) => set({ editingRect: rect }),
+
+  toggleAudio: () => set((s) => ({ audioEnabled: !s.audioEnabled })),
+
+  setAudioTrack: (id) => {
+    // Unknown id ⇒ ignore (authoring guard, like applyCustomization).
+    if (!ambientTrackById(id)) return;
+    set({ audioTrackId: id });
+  },
 }));
