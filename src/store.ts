@@ -177,12 +177,17 @@ async function applyRoomPatch(patch: RoomCustomizationPatch): Promise<void> {
       rooms: s.rooms.map((r) => (r.id === saved.id ? saved : r)),
     }));
   } catch (err) {
-    console.warn("updateRoomCustomization failed; rolling back", err);
-    useAppStore.setState((s) => ({
-      currentRoom:
-        s.currentRoom?.id === previous.id ? previous : s.currentRoom,
-      rooms: s.rooms.map((r) => (r.id === previous.id ? previous : r)),
-    }));
+    // Customization is non-destructive, per-Room *cosmetic* state. A write
+    // hiccup (transient network, an un-migrated DB column, a stale JWT) must
+    // NOT yank the User back to the default look — that reads as "my choice
+    // snapped back". So we KEEP the optimistic value (the look the User picked
+    // stays applied this session) and surface the failure loudly for ops,
+    // rather than rolling back. It re-persists on the next successful write.
+    console.error(
+      "updateRoomCustomization failed — keeping the applied look this " +
+        "session; it may not survive a reload until the write succeeds.",
+      err,
+    );
   }
 }
 
@@ -1047,11 +1052,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         rooms: s.rooms.map((r) => (r.id === saved.id ? saved : r)),
       }));
     } catch (err) {
-      console.warn("updateRoomDimensions failed; rolling back", err);
-      set((s) => ({
-        currentRoom: s.currentRoom?.id === previous.id ? previous : s.currentRoom,
-        rooms: s.rooms.map((r) => (r.id === previous.id ? previous : r)),
-      }));
+      // Same graceful-degrade as applyRoomPatch: resizing is cosmetic per-Room
+      // state, so a write hiccup keeps the chosen size this session rather than
+      // snapping the Room back to its old dimensions.
+      console.error(
+        "updateRoomDimensions failed — keeping the chosen size this session; " +
+          "it may not survive a reload until the write succeeds.",
+        err,
+      );
     }
   },
 

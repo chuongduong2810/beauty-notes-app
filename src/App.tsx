@@ -12,6 +12,7 @@ import {
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { Atmosphere } from "./components/Atmosphere";
 import { weatherLightingConfig } from "./lib/atmosphere-config";
+import { ambienceRender, lightingRender } from "./lib/customization-render";
 import { EditorRectPublisher } from "./components/EditorRectPublisher";
 import { NoteEditor } from "./components/NoteEditor";
 import { RoomScene } from "./components/RoomScene";
@@ -98,6 +99,13 @@ function KeyLight({
 }) {
   const lightRef = useRef<DirectionalLight | null>(null);
   const weather = weatherLightingConfig();
+  // Lighting Customization (ADR-0022, issue #108): a premium Lighting Item
+  // overrides the key-light colour/intensity; the free default returns null so
+  // the baseline overcast Weather lighting (issue #45) stands unchanged.
+  const lightingId = useAppStore((s) => s.currentRoom?.lighting_id);
+  const lighting = lightingRender(lightingId);
+  const keyColor = lighting?.color ?? weather.keyLightColor;
+  const keyIntensity = lighting?.intensity ?? weather.keyLightIntensity;
 
   useFrame(() => {
     const orbit = orbitRef.current;
@@ -117,8 +125,8 @@ function KeyLight({
     <>
       <directionalLight
         ref={lightRef}
-        intensity={weather.keyLightIntensity}
-        color={weather.keyLightColor}
+        intensity={keyIntensity}
+        color={keyColor}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -144,6 +152,19 @@ function KeyLight({
       />
     </>
   );
+}
+
+/**
+ * Ambience Customization wash (ADR-0022, issue #108). A premium Ambience Item
+ * layers a faint tinted ambient light over the fixed rainy Weather mood
+ * (ADR-0015); the free "Quiet" default renders nothing, so the baseline stands
+ * alone. Distinct from Lighting (the key light) — this is the mood wash.
+ */
+function AmbienceWash() {
+  const ambienceId = useAppStore((s) => s.currentRoom?.ambience_id);
+  const wash = ambienceRender(ambienceId);
+  if (!wash) return null;
+  return <ambientLight intensity={wash.intensity} color={wash.color} />;
 }
 
 function FocusDriver({
@@ -574,6 +595,8 @@ export function App() {
             every frame (#34) so shadow-map resolution stays where the
             user is looking. */}
         <KeyLight orbitRef={orbitRef} />
+        {/* Premium Ambience mood wash over the fixed Weather (issue #108). */}
+        <AmbienceWash />
         {ready && room && (
           <RoomScene
             room={room}

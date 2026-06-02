@@ -9,6 +9,8 @@ import {
 } from "../lib/room";
 import { buildingLayout, windowPlacement } from "../lib/city-layout";
 import { rainStreakLayout, scrollOffset } from "../lib/rain-streaks";
+import { windowRender } from "../lib/customization-render";
+import { useAppStore } from "../store";
 import { CityRain } from "./CityRain";
 
 /**
@@ -64,7 +66,6 @@ const FRAME_DEPTH = 0.1;
 /** Dusk-sky / fog colour the far skyline fades into. */
 const SKY_COLOR = "#3a3358";
 const GROUND_COLOR = "#16131f";
-const GLASS_TINT = "#bcd2e0";
 const FRAME_COLOR = "#1a1620";
 
 /** Deterministic, calm palette for the building boxes. */
@@ -189,6 +190,12 @@ export function CityView() {
   const buildings = useMemo(() => buildingLayout(ROOM_W), []);
   const win = useMemo(() => windowPlacement(ROOM_W, ROOM_D, ROOM_H), []);
 
+  // Window Style Customization (ADR-0022, issue #108): a premium Window Item
+  // tints the glass (stained glass reads more opaque/coloured) and can add an
+  // arched crown over the opening. The free "Plain Pane" default is unchanged.
+  const windowStyleId = useAppStore((s) => s.currentRoom?.window_style_id);
+  const windowStyle = windowRender(windowStyleId);
+
   const halfW = win.width / 2;
   const halfH = win.height / 2;
   const aspect = win.width / win.height;
@@ -267,13 +274,28 @@ export function CityView() {
         <mesh position={[0, 0, 0.04]} raycast={NO_RAYCAST}>
           <planeGeometry args={[win.width, win.height]} />
           <meshStandardMaterial
-            color={GLASS_TINT}
+            color={windowStyle.glassTint}
             transparent
-            opacity={0.06}
+            opacity={windowStyle.glassOpacity}
             roughness={0.05}
             metalness={0.1}
           />
         </mesh>
+
+        {/* Arched crown (premium "Arched" Window Style) — a half-ring frame
+            riding the top edge of the opening. */}
+        {windowStyle.arched && (
+          <mesh
+            position={[0, halfH, FRAME_DEPTH / 2]}
+            raycast={NO_RAYCAST}
+            castShadow
+          >
+            <torusGeometry
+              args={[halfW, FRAME_THICKNESS / 2, 12, 24, Math.PI]}
+            />
+            <meshStandardMaterial color={FRAME_COLOR} roughness={0.7} />
+          </mesh>
+        )}
 
         {/* On-glass rain streaks (issue #44), just in front of the sheen. */}
         <RainStreakOverlay width={win.width} height={win.height} zOffset={0.05} />
