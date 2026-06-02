@@ -65,6 +65,47 @@ function PenCursor({
 }
 
 /**
+ * A ring cursor that follows the eraser on the wall while the Eraser tool is
+ * active (issue #132) — the on-surface counterpart to {@link PenCursor}. It
+ * reads the shared `penHoverPoint` (the wall point under the cursor, tracked
+ * for both pen and eraser) and draws a thin ring sized to the eraser radius,
+ * so the user sees exactly what a pass will clear. `raycast` is disabled so it
+ * never intercepts pointer events meant for the wall.
+ */
+function EraserCursor({
+  surfaceId,
+  surfaceWidthM,
+  surfaceHeightM,
+}: {
+  surfaceId: string;
+  surfaceWidthM: number;
+  surfaceHeightM: number;
+}) {
+  const point = useAppStore((s) => {
+    const hover = s.penHoverPoint;
+    return hover?.surface_id === surfaceId ? { u: hover.u, v: hover.v } : null;
+  });
+  const eraserRadius = useAppStore((s) => s.eraserRadius);
+  if (!point) return null;
+  const x = (point.u - 0.5) * surfaceWidthM;
+  const y = (point.v - 0.5) * surfaceHeightM;
+  // The radius lives in (u, v); scale by the Surface width for a close-enough
+  // circular indicator on near-square walls. Tracks the active Eraser size.
+  const r = eraserRadius * surfaceWidthM;
+  return (
+    <mesh position={[x, y, 0.002]} raycast={() => null}>
+      <ringGeometry args={[Math.max(r - 0.004, r * 0.7), r, 32]} />
+      <meshBasicMaterial
+        color="#e8e8ef"
+        transparent
+        opacity={0.85}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+/**
  * Live preview of the Stroke currently being drawn. Subscribes to the
  * in-progress points directly so each appended point re-renders the
  * polyline without waiting for the commit-to-repo roundtrip.
@@ -138,7 +179,9 @@ export function RoomScene({
   const appendStrokePoint = useAppStore((s) => s.appendStrokePoint);
   const commitStroke = useAppStore((s) => s.commitStroke);
   const setPenHoverPoint = useAppStore((s) => s.setPenHoverPoint);
+  const beginErase = useAppStore((s) => s.beginErase);
   const eraseStrokeAt = useAppStore((s) => s.eraseStrokeAt);
+  const commitErase = useAppStore((s) => s.commitErase);
 
   const surfaceMeshes = useRef<Map<string, Mesh>>(new Map());
   const trashMeshRef = useRef<Mesh | null>(null);
@@ -253,9 +296,10 @@ export function RoomScene({
   ]);
 
   // While an Eraser drag is active, drive window-level pointermove and
-  // pointerup (mirrors the in-progress-Stroke effect). Each move raycasts
-  // the Surface the drag began on and erases whole Strokes under the
-  // cursor; release ends the drag. Erasing is whole-Stroke (issue #132).
+  // pointerup (mirrors the in-progress-Stroke effect). Each move raycasts the
+  // Surface the drag began on and erases the PART of any Stroke under the
+  // cursor (real-eraser, issue #132) — local-only. Release commits the whole
+  // drag to the repo once via `commitErase`, avoiding a per-move write storm.
   useEffect(() => {
     if (!erasingSurfaceId) return;
     const dom = gl.domElement;
@@ -271,9 +315,12 @@ export function RoomScene({
       const hits = raycaster.intersectObject(mesh, false);
       const hit = hits[0];
       if (!hit || !hit.uv) return;
-      void eraseStrokeAt(erasingSurfaceId, hit.uv.x, hit.uv.y);
+      eraseStrokeAt(erasingSurfaceId, hit.uv.x, hit.uv.y);
     };
-    const onUp = () => setErasingSurfaceId(null);
+    const onUp = () => {
+      void commitErase();
+      setErasingSurfaceId(null);
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
@@ -282,14 +329,15 @@ export function RoomScene({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [erasingSurfaceId, camera, gl, raycaster, eraseStrokeAt]);
+  }, [erasingSurfaceId, camera, gl, raycaster, eraseStrokeAt, commitErase]);
 
-  // While in Pen mode but NOT actively drawing, track the cursor's
-  // wall hit so the 3D pen-cursor (PenCursor) follows the mouse from
-  // the moment the user picks up the pen, instead of only appearing
-  // once they pen-down (#35 follow-up).
+  // While in Pen OR Eraser mode but NOT actively drawing, track the cursor's
+  // wall hit into `penHoverPoint` (the shared "wall point under the cursor")
+  // so the 3D tool cursor — the pen prop (PenCursor) or the eraser ring
+  // (EraserCursor) — follows the mouse from the moment the tool is picked up
+  // (#35 follow-up; eraser cursor, issue #132).
   useEffect(() => {
-    if (currentTool !== "pen") {
+    if (currentTool !== "pen" && currentTool !== "eraser") {
       setPenHoverPoint(null);
       return;
     }
@@ -454,10 +502,12 @@ export function RoomScene({
           if (e.object.userData.surface_id !== s.id) return;
           e.stopPropagation();
           if (currentTool === "eraser") {
-            // Erase immediately under the cursor, then begin an erase drag
-            // (the window-level effect erases on each move). Whole-Stroke
+            // Snapshot for the deferred commit, erase the part under the
+            // cursor, then begin an erase drag (the window-level effect erases
+            // on each move; pointer-up persists once). Partial, real-eraser
             // granularity (issue #132).
-            void eraseStrokeAt(s.id, e.uv.x, e.uv.y);
+            beginErase();
+            eraseStrokeAt(s.id, e.uv.x, e.uv.y);
             setErasingSurfaceId(s.id);
             return;
           }
@@ -514,6 +564,15 @@ export function RoomScene({
                 Surface owns the active stroke or the idle hover. */}
             {currentTool === "pen" && (
               <PenCursor
+                surfaceId={s.id}
+                surfaceWidthM={t.size[0]}
+                surfaceHeightM={t.size[1]}
+              />
+            )}
+            {/* Eraser ring cursor — follows the wall hit while erasing
+                (issue #132). */}
+            {currentTool === "eraser" && (
+              <EraserCursor
                 surfaceId={s.id}
                 surfaceWidthM={t.size[0]}
                 surfaceHeightM={t.size[1]}

@@ -6,6 +6,7 @@ import type { Note, Room } from "./lib/room";
 import { entitlementsForTier } from "./lib/entitlements";
 import { catalogByKind } from "./lib/catalog";
 import { roomSizePresetById } from "./lib/room-size";
+import { DEFAULT_ERASER_RADIUS_UV } from "./lib/stroke-hit";
 
 // Mock the Supabase client so claimRoom's `updateUser` (issue #70),
 // sendRestoreLink's `signInWithOtp` (issue #82) and restoreWithPassword's
@@ -892,8 +893,10 @@ describe("store — ambient soundscape (issue #128, ADR-0024)", () => {
   });
 });
 
-describe("store — eraseStrokeAt (Eraser tool, issue #132)", () => {
-  /** Seed one Annotation on `s1` carrying a single horizontal Stroke. */
+describe("store — Eraser: partial erase + deferred commit (issue #132)", () => {
+  /** Seed one Annotation on `s1` carrying a single DENSE horizontal Stroke
+   *  (points 0.2 apart) so the eraser (radius 0.03) catches only the point
+   *  under it — the real-eraser model. */
   function seedAnnotation() {
     useAppStore.setState({
       annotations: [
@@ -906,8 +909,11 @@ describe("store — eraseStrokeAt (Eraser tool, issue #132)", () => {
               id: "stroke-1",
               annotation_id: "a1",
               points: [
-                { u: 0.2, v: 0.5, p: 0.5, t: 0 },
-                { u: 0.8, v: 0.5, p: 0.5, t: 10 },
+                { u: 0.1, v: 0.5, p: 0.5, t: 0 },
+                { u: 0.3, v: 0.5, p: 0.5, t: 1 },
+                { u: 0.5, v: 0.5, p: 0.5, t: 2 },
+                { u: 0.7, v: 0.5, p: 0.5, t: 3 },
+                { u: 0.9, v: 0.5, p: 0.5, t: 4 },
               ],
               color_id: "ink",
               width_id: "fine",
@@ -922,48 +928,120 @@ describe("store — eraseStrokeAt (Eraser tool, issue #132)", () => {
     });
   }
 
+  /** A repo stub recording delete + insert calls; `insertStroke` returns a
+   *  real-id row so `commitErase` can reconcile the optimistic fragments. */
+  function stubRepo() {
+    const deleteStroke = vi.fn(async () => {});
+    let n = 0;
+    const insertStroke = vi.fn(
+      async (
+        annotationId: string,
+        ns: {
+          points: unknown;
+          color_id: string;
+          width_id: string;
+          index: number;
+        },
+      ) => ({
+        id: `real-${++n}`,
+        annotation_id: annotationId,
+        points: ns.points,
+        color_id: ns.color_id,
+        width_id: ns.width_id,
+        index: ns.index,
+        created_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+    const repo = { deleteStroke, insertStroke } as unknown as CanvasRepository;
+    return { repo, deleteStroke, insertStroke };
+  }
+
   beforeEach(() => {
-    useAppStore.setState({ annotations: [], repo: null });
+    useAppStore.setState({
+      annotations: [],
+      repo: null,
+      eraseSnapshot: null,
+      eraserRadius: DEFAULT_ERASER_RADIUS_UV,
+    });
   });
 
-  it("erases a hit Stroke and persists via repo.deleteStroke", async () => {
-    const deleteStroke = vi.fn(async () => {});
-    const repo = { deleteStroke } as unknown as CanvasRepository;
+  it("splits a Stroke locally on a mid-line pass and touches no repo during the drag", () => {
+    const { repo, deleteStroke, insertStroke } = stubRepo();
     seedAnnotation();
     useAppStore.setState({ repo });
 
-    // (0.5, 0.5) is the midpoint of the Stroke — a clear hit.
-    await useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.5);
+    useAppStore.getState().beginErase();
+    useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.5); // removes the middle point
+
+    const strokes = useAppStore.getState().annotations[0].strokes;
+    expect(strokes).toHaveLength(2); // split into two surviving fragments
+    expect(strokes.every((st) => st.id.startsWith("pending-erase"))).toBe(true);
+    expect(deleteStroke).not.toHaveBeenCalled();
+    expect(insertStroke).not.toHaveBeenCalled();
+  });
+
+  it("commitErase deletes the original and inserts + reconciles the fragments", async () => {
+    const { repo, deleteStroke, insertStroke } = stubRepo();
+    seedAnnotation();
+    useAppStore.setState({ repo });
+
+    useAppStore.getState().beginErase();
+    useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.5);
+    await useAppStore.getState().commitErase();
+
+    expect(deleteStroke).toHaveBeenCalledWith("stroke-1");
+    expect(insertStroke).toHaveBeenCalledTimes(2);
+    const strokes = useAppStore.getState().annotations[0].strokes;
+    // Reconciled to real ids — no optimistic fragments left.
+    expect(strokes.every((st) => st.id.startsWith("real-"))).toBe(true);
+    expect(useAppStore.getState().eraseSnapshot).toBeNull();
+  });
+
+  it("leaves a Stroke intact on a miss and commits nothing", async () => {
+    const { repo, deleteStroke, insertStroke } = stubRepo();
+    seedAnnotation();
+    useAppStore.setState({ repo });
+
+    useAppStore.getState().beginErase();
+    useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.95); // far from the line
+    await useAppStore.getState().commitErase();
+
+    const strokes = useAppStore.getState().annotations[0].strokes;
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0].id).toBe("stroke-1");
+    expect(deleteStroke).not.toHaveBeenCalled();
+    expect(insertStroke).not.toHaveBeenCalled();
+  });
+
+  it("erasing the whole line removes the Stroke; commitErase only deletes", async () => {
+    const { repo, deleteStroke, insertStroke } = stubRepo();
+    seedAnnotation();
+    useAppStore.setState({ repo });
+
+    useAppStore.getState().beginErase();
+    // Sweep across every sample point so no fragment survives.
+    for (const u of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      useAppStore.getState().eraseStrokeAt("s1", u, 0.5);
+    }
+    expect(useAppStore.getState().annotations[0].strokes).toHaveLength(0);
+
+    await useAppStore.getState().commitErase();
+    expect(deleteStroke).toHaveBeenCalledWith("stroke-1");
+    expect(insertStroke).not.toHaveBeenCalled();
+  });
+
+  it("respects the active eraser radius (resize): a larger radius clears more", () => {
+    const { repo } = stubRepo();
+    seedAnnotation();
+    useAppStore.setState({ repo });
+
+    // A wide radius (0.2) swallows the three middle points in one pass; the
+    // two lone end points can't form a ≥2-point fragment, so the Stroke is
+    // gone — whereas the default radius would only split it in two.
+    useAppStore.getState().setEraserRadius(0.2);
+    useAppStore.getState().beginErase();
+    useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.5);
 
     expect(useAppStore.getState().annotations[0].strokes).toHaveLength(0);
-    expect(deleteStroke).toHaveBeenCalledWith("stroke-1");
-  });
-
-  it("leaves a Stroke untouched when the eraser misses", async () => {
-    const deleteStroke = vi.fn(async () => {});
-    const repo = { deleteStroke } as unknown as CanvasRepository;
-    seedAnnotation();
-    useAppStore.setState({ repo });
-
-    // Far from the horizontal Stroke at v=0.5.
-    await useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.95);
-
-    expect(useAppStore.getState().annotations[0].strokes).toHaveLength(1);
-    expect(deleteStroke).not.toHaveBeenCalled();
-  });
-
-  it("rolls the Stroke back when repo.deleteStroke throws", async () => {
-    const repo = {
-      async deleteStroke() {
-        throw new Error("offline");
-      },
-    } as unknown as CanvasRepository;
-    seedAnnotation();
-    useAppStore.setState({ repo });
-
-    await useAppStore.getState().eraseStrokeAt("s1", 0.5, 0.5);
-
-    expect(useAppStore.getState().annotations[0].strokes).toHaveLength(1);
-    expect(useAppStore.getState().annotations[0].strokes[0].id).toBe("stroke-1");
   });
 });

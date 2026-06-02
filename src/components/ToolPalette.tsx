@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Tool } from "../lib/pen-tool";
+import { ERASER_SIZES } from "../lib/stroke-hit";
 import { useAppStore } from "../store";
 
 /**
@@ -56,6 +57,25 @@ const hidePillStyle: CSSProperties = {
   color: "rgba(255,255,255,0.55)",
 };
 
+/** Wrapper for the eraser-size buttons, set off from the tool pills by a
+ *  faint divider so it reads as a related sub-control. */
+const sizeGroupStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  paddingLeft: 6,
+  marginLeft: 2,
+  borderLeft: "1px solid rgba(255,255,255,0.14)",
+};
+
+/** A compact size pill (S / M / L) — narrower than a tool pill. */
+const sizePillStyle: CSSProperties = {
+  ...pillBase,
+  padding: "6px 10px",
+  minWidth: 28,
+  justifyContent: "center",
+};
+
 const restoreChipStyle: CSSProperties = {
   position: "fixed",
   top: 16,
@@ -80,6 +100,9 @@ export function ToolPalette() {
   const setCurrentTool = useAppStore((s) => s.setCurrentTool);
   const visible = useAppStore((s) => s.toolbarVisible);
   const setToolbarVisible = useAppStore((s) => s.setToolbarVisible);
+  // Eraser size (issue #132): shown only while the Eraser is active.
+  const eraserRadius = useAppStore((s) => s.eraserRadius);
+  const setEraserRadius = useAppStore((s) => s.setEraserRadius);
 
   if (!visible) {
     return (
@@ -112,6 +135,29 @@ export function ToolPalette() {
           </button>
         );
       })}
+      {/* Eraser size selector (issue #132) — only while the Eraser is the
+          active tool. Resizing changes both what a pass clears and the size
+          of the on-wall eraser ring cursor. */}
+      {currentTool === "eraser" && (
+        <span style={sizeGroupStyle}>
+          {ERASER_SIZES.map((size) => {
+            const active = Math.abs(eraserRadius - size.radius) < 1e-6;
+            return (
+              <button
+                key={size.id}
+                type="button"
+                aria-pressed={active}
+                aria-label={`Eraser size ${size.label}`}
+                title={`Eraser size ${size.label}`}
+                style={{ ...sizePillStyle, ...(active ? pillActive : null) }}
+                onClick={() => setEraserRadius(size.radius)}
+              >
+                {size.label}
+              </button>
+            );
+          })}
+        </span>
+      )}
       <button
         type="button"
         aria-label="Hide toolbar"

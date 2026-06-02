@@ -470,14 +470,25 @@ export function App() {
   // dragging a Note across Surfaces, a stray drag-orbit would fight the
   // re-Pin gesture and spin the camera. Lock orbit until the drag commits.
   const draggingNote = useAppStore((s) => s.drag !== null);
-  const inPenMode = useAppStore((s) => s.penState.currentTool === "pen");
+  // Same rationale for an active Eraser drag (issue #132): an erase gesture is
+  // a continuous drag across a wall, so a stray drag-orbit would spin the
+  // camera mid-erase. `eraseSnapshot` is non-null exactly between the eraser
+  // pointer-down (beginErase) and pointer-up (commitErase), so it marks the
+  // drag — lock orbit while it's set.
+  const erasing = useAppStore((s) => s.eraseSnapshot !== null);
+  // Pen and Eraser both put a tool "in hand" with its own on-wall 3D cursor
+  // (the pen prop / the eraser ring), so the OS cursor is hidden for either.
+  const toolCursorHidden = useAppStore(
+    (s) =>
+      s.penState.currentTool === "pen" || s.penState.currentTool === "eraser",
+  );
   const beforeFocus = useAppStore((s) => s.beforeFocus);
   useEffect(() => {
     const c = orbitRef.current;
     if (!c) return;
     if (focusedNoteId || beforeFocus) return;
-    c.enabled = !drawingStroke && !draggingNote;
-  }, [drawingStroke, draggingNote, focusedNoteId, beforeFocus]);
+    c.enabled = !drawingStroke && !draggingNote && !erasing;
+  }, [drawingStroke, draggingNote, erasing, focusedNoteId, beforeFocus]);
 
   // Escape exits focus.
   useEffect(() => {
@@ -549,11 +560,11 @@ export function App() {
         position: "fixed",
         inset: 0,
         background: ROOM_BACKDROP,
-        // Hide the system cursor whenever the pen is "in hand" — i.e.
-        // the user is in Pen mode, whether actively drawing or just
-        // hovering. The 3D pen mesh substitutes as the cursor on the
-        // wall (#35).
-        cursor: inPenMode ? "none" : undefined,
+        // Hide the system cursor whenever a wall tool is "in hand" (Pen or
+        // Eraser), whether actively drawing/erasing or just hovering — the 3D
+        // pen mesh / eraser ring substitutes as the cursor on the wall (#35,
+        // issue #132).
+        cursor: toolCursorHidden ? "none" : undefined,
       }}
     >
       <Canvas

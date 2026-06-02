@@ -50,7 +50,7 @@ import {
 } from "./lib/ambient-audio";
 import type { RoomCustomizationPatch } from "./lib/canvas-repository";
 import type { Annotation, Stroke, StrokePoint } from "./lib/stroke";
-import { ERASER_RADIUS_UV, strokeHitByEraser } from "./lib/stroke-hit";
+import { DEFAULT_ERASER_RADIUS_UV, splitStrokeByEraser } from "./lib/stroke-hit";
 
 /** Tiny non-cryptographic id for optimistic Annotation / Stroke rows
  *  that exist in local state before the repo round-trip resolves. */
@@ -370,6 +370,19 @@ type AppState = {
   surfaces: Surface[];
   notes: Note[];
   annotations: Annotation[];
+  /**
+   * Annotations captured at the start of an Eraser drag (issue #132), or null
+   * when not erasing. {@link commitErase} diffs this against the post-drag
+   * state to persist the net change and uses it to roll back on a failure.
+   */
+  eraseSnapshot: Annotation[] | null;
+  /**
+   * The active Eraser radius in Surface-normalized `(u, v)` units (issue #132).
+   * Drives both the erase hit-test ({@link eraseStrokeAt}) and the on-wall
+   * eraser ring cursor, so resizing the Eraser changes what a pass clears and
+   * how big the cursor reads. Chosen from {@link ERASER_SIZES} via the toolbar.
+   */
+  eraserRadius: number;
 
   /**
    * Pen-tool state machine (issue #35). `currentTool`, `pen`, and the
@@ -638,23 +651,47 @@ type AppState = {
   appendStrokePoint: (point: StrokePoint) => void;
   commitStroke: () => Promise<void>;
   /**
-   * Erase whole Strokes under the eraser at `(u, v)` on the given Surface
-   * (Eraser tool, issue #132). Hit-tests every Stroke on that Surface's
-   * Annotations with `strokeHitByEraser` (whole-Stroke granularity — no
-   * pixel/segment splitting) and, for each hit, optimistically removes the
-   * Stroke from its Annotation's `strokes` then `await repo.deleteStroke(id)`,
-   * rolling that Stroke back (and `console.warn`) on failure — mirroring
-   * `deleteNote`'s optimistic-then-rollback. Skips optimistic/in-progress ids
-   * (`pending-` / `in-progress`) since they have no persisted row yet. An
-   * Annotation emptied of its last Stroke is left in place (it renders
-   * nothing); no `deleteAnnotation`. No-op for the persistence step without a
-   * repo (the optimistic local removal still happens).
+   * Snapshot the start of an Eraser drag so {@link commitErase} can work out
+   * what to persist (issue #132). Captures the current `annotations` (cloned
+   * arrays) into {@link eraseSnapshot}; `commitErase` diffs that against the
+   * post-drag state and uses the snapshot for rollback on a write failure.
+   * Call once on eraser pointer-down, before the first {@link eraseStrokeAt}.
+   */
+  beginErase: () => void;
+  /**
+   * Erase the PART of any Stroke under the eraser at `(u, v)` on the Surface —
+   * a real eraser, clearing the line where it passes rather than deleting the
+   * whole Stroke (issue #132). For each Stroke on the Surface,
+   * `splitStrokeByEraser` drops the points within {@link ERASER_RADIUS_UV} and
+   * the Stroke is replaced IN LOCAL STATE by one optimistic (`pending-erase-…`)
+   * fragment Stroke per surviving run; a fully-covered Stroke is dropped.
+   * Pen-optimistic / in-progress rows are skipped (the pen flow owns them).
    *
-   * @param surface_id - the Surface whose Annotations to scan.
+   * This is **local-only and synchronous** — NO repo calls. The eraser fires
+   * on every pointer-move, so persistence is deferred to a single
+   * {@link commitErase} on pointer-up to avoid a per-move write storm.
+   *
+   * @param surface_id - the Surface whose Strokes to erase.
    * @param u - the eraser's normalized horizontal coordinate (0..1).
    * @param v - the eraser's normalized vertical coordinate (0..1).
    */
-  eraseStrokeAt: (surface_id: string, u: number, v: number) => Promise<void>;
+  eraseStrokeAt: (surface_id: string, u: number, v: number) => void;
+  /**
+   * Set the active Eraser radius (issue #132), in Surface-normalized `(u, v)`
+   * units — a value from {@link ERASER_SIZES}. Affects the next erase pass and
+   * the eraser ring cursor immediately.
+   */
+  setEraserRadius: (radius: number) => void;
+  /**
+   * Persist one Eraser drag, once, on pointer-up (issue #132). Diffs the
+   * {@link eraseSnapshot} against the current state: originals that were
+   * erased/split (a persisted id present before but gone now) are
+   * `repo.deleteStroke`-d, and the surviving `pending-erase-…` fragments are
+   * `repo.insertStroke`-ed and reconciled to their real ids (mirroring
+   * `commitStroke`). On a write failure it restores the snapshot and
+   * `console.warn`s (best-effort). Clears the snapshot. No-op without one.
+   */
+  commitErase: () => Promise<void>;
 
   createNoteAt: (surfaceId: string, u: number, v: number) => Promise<void>;
 
@@ -722,6 +759,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   surfaces: [],
   notes: [],
   annotations: [],
+  eraseSnapshot: null,
+  eraserRadius: DEFAULT_ERASER_RADIUS_UV,
 
   penState: initialPenState,
   penHoverPoint: null,
@@ -1352,59 +1391,128 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  eraseStrokeAt: async (surface_id, u, v) => {
-    const { annotations, repo } = get();
+  beginErase: () => {
+    // Snapshot annotations so commitErase can diff (which originals were
+    // erased/split) and roll back on a write failure. Clone the array and
+    // each annotation's `strokes` array; stroke objects can be shared refs
+    // since we never mutate them in place.
+    set((s) => ({
+      eraseSnapshot: s.annotations.map((a) => ({ ...a, strokes: [...a.strokes] })),
+    }));
+  },
+
+  eraseStrokeAt: (surface_id, u, v) => {
     const eraser = { u, v };
-    // Collect every persisted Stroke on this Surface that the eraser
-    // touches. Skip optimistic ids (`pending-` / `in-progress`) — they
-    // have no repo row to delete yet, and the pen flow owns their lifecycle.
-    const hits: { annotationId: string; stroke: Stroke }[] = [];
-    for (const a of annotations) {
-      if (a.surface_id !== surface_id) continue;
-      for (const stroke of a.strokes) {
-        if (stroke.id.startsWith("pending-") || stroke.id === "in-progress") {
-          continue;
+    const radius = get().eraserRadius;
+    // Local-only, synchronous: split every Stroke on the Surface where the
+    // eraser passes and replace it with its surviving fragments. No repo here
+    // — the eraser fires on every pointer-move, so persistence is deferred to
+    // one commitErase() on pointer-up (see that action). Pen-optimistic /
+    // in-progress rows are left alone (the pen flow owns their lifecycle).
+    set((s) => ({
+      annotations: s.annotations.map((a) => {
+        if (a.surface_id !== surface_id) return a;
+        let changed = false;
+        const nextStrokes: Stroke[] = [];
+        for (const stroke of a.strokes) {
+          if (
+            stroke.id === "in-progress" ||
+            stroke.id.startsWith("pending-stroke") ||
+            stroke.id.startsWith("pending-annotation")
+          ) {
+            nextStrokes.push(stroke);
+            continue;
+          }
+          const runs = splitStrokeByEraser(stroke.points, eraser, radius);
+          // Unchanged: a single run holding every original point.
+          if (runs.length === 1 && runs[0].length === stroke.points.length) {
+            nextStrokes.push(stroke);
+            continue;
+          }
+          // Changed: one fragment Stroke per surviving run (none if the whole
+          // Stroke was erased). Fragments are optimistic until commitErase
+          // persists them; they keep the original colour / width / index.
+          changed = true;
+          for (const run of runs) {
+            nextStrokes.push({
+              ...stroke,
+              id: tempId("pending-erase"),
+              points: run,
+            });
+          }
         }
-        if (strokeHitByEraser(stroke.points, eraser, ERASER_RADIUS_UV)) {
-          hits.push({ annotationId: a.id, stroke });
+        return changed ? { ...a, strokes: nextStrokes } : a;
+      }),
+    }));
+  },
+
+  commitErase: async () => {
+    const { eraseSnapshot, repo, annotations } = get();
+    if (!eraseSnapshot) return;
+    // This drag's persistence happens once, here — drop the snapshot.
+    set({ eraseSnapshot: null });
+    if (!repo) return;
+
+    // Stroke ids still live after the drag.
+    const currentIds = new Set<string>();
+    for (const a of annotations) {
+      for (const st of a.strokes) currentIds.add(st.id);
+    }
+    // Persisted originals that were erased/split (present before, gone now).
+    const toDelete: string[] = [];
+    for (const a of eraseSnapshot) {
+      for (const st of a.strokes) {
+        const optimistic =
+          st.id === "in-progress" || st.id.startsWith("pending-");
+        if (!optimistic && !currentIds.has(st.id)) toDelete.push(st.id);
+      }
+    }
+    // Surviving fragments created during the drag → insert + reconcile id.
+    const toInsert: { annotationId: string; stroke: Stroke }[] = [];
+    for (const a of annotations) {
+      for (const st of a.strokes) {
+        if (st.id.startsWith("pending-erase")) {
+          toInsert.push({ annotationId: a.id, stroke: st });
         }
       }
     }
-    if (hits.length === 0) return;
+    if (toDelete.length === 0 && toInsert.length === 0) return;
 
-    // Optimistically remove the hit Strokes from local state so they
-    // vanish under the cursor immediately. An Annotation emptied of its
-    // last Stroke is left in place — it simply renders nothing.
-    const hitIds = new Set(hits.map((h) => h.stroke.id));
-    set((s) => ({
-      annotations: s.annotations.map((a) =>
-        a.surface_id === surface_id
-          ? { ...a, strokes: a.strokes.filter((st) => !hitIds.has(st.id)) }
-          : a,
-      ),
-    }));
-
-    if (!repo) return;
-
-    // Persist each deletion; on failure restore that one Stroke (rollback),
-    // mirroring deleteNote's per-row optimistic-then-rollback.
-    await Promise.all(
-      hits.map(async ({ annotationId, stroke }) => {
-        try {
-          await repo.deleteStroke(stroke.id);
-        } catch (err) {
-          console.warn("eraseStrokeAt deleteStroke failed; rolling back", err);
+    try {
+      await Promise.all(toDelete.map((id) => repo.deleteStroke(id)));
+      await Promise.all(
+        toInsert.map(async ({ annotationId, stroke }) => {
+          const real = await repo.insertStroke(annotationId, {
+            points: stroke.points,
+            color_id: stroke.color_id,
+            width_id: stroke.width_id,
+            index: stroke.index,
+          });
+          // Reconcile the optimistic fragment → its persisted row.
           set((s) => ({
             annotations: s.annotations.map((a) =>
               a.id === annotationId
-                ? { ...a, strokes: [...a.strokes, stroke] }
+                ? {
+                    ...a,
+                    strokes: a.strokes.map((x) =>
+                      x.id === stroke.id ? real : x,
+                    ),
+                  }
                 : a,
             ),
           }));
-        }
-      }),
-    );
+        }),
+      );
+    } catch (err) {
+      // Best-effort rollback: restore the pre-drag annotations so local state
+      // doesn't diverge from what actually persisted. Matches the codebase's
+      // optimistic-rollback tone for cosmetic data.
+      console.warn("commitErase persistence failed; restoring snapshot", err);
+      set({ annotations: eraseSnapshot });
+    }
   },
+
+  setEraserRadius: (radius) => set({ eraserRadius: radius }),
 
   createNoteAt: async (surfaceId, u, v) => {
     const { session } = get();

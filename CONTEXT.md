@@ -62,7 +62,7 @@ A freehand drawing made directly on a Surface — strokes, doodles, arrows, high
 _Avoid_: Drawing (overloaded verb), sketch, scribble, doodle, markup
 
 **Stroke**:
-One continuous pen-down → pen-up gesture inside an Annotation. Stored as an ordered list of points in `(u, v)` Surface coordinates, each carrying a normalized pressure and a colour reference into the Palette. The atomic unit of undo / redo inside an Annotation. The Eraser tool removes a whole Stroke at a time — dragging over any part of a Stroke deletes that entire Stroke (no pixel- or segment-level splitting).
+One continuous pen-down → pen-up gesture inside an Annotation. Stored as an ordered list of points in `(u, v)` Surface coordinates, each carrying a normalized pressure and a colour reference into the Palette. The atomic unit of undo / redo inside an Annotation. The Eraser tool erases like a real eraser — it removes only the portion of a Stroke it passes over, splitting the Stroke into the surviving fragments rather than deleting the whole thing.
 _Avoid_: Line, path, segment
 
 **Photo Mode**:
