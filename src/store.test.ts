@@ -793,6 +793,40 @@ describe("store — resizeRoom (Studio room resize)", () => {
   });
 });
 
+describe("store — renameRoom (issue #133)", () => {
+  async function seedRoom() {
+    const repo = new InMemoryCanvasRepository();
+    const room = await repo.insertRoom("u1", "Old name");
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "u1" } } as never,
+      currentRoom: room,
+      rooms: [room],
+    } as never);
+    return room;
+  }
+
+  it("renames the current Room and persists, updating currentRoom + rooms", async () => {
+    const room = await seedRoom();
+    await useAppStore.getState().renameRoom(room.id, "New name");
+    const state = useAppStore.getState();
+    expect(state.currentRoom!.name).toBe("New name");
+    expect(state.rooms.find((r) => r.id === room.id)!.name).toBe("New name");
+  });
+
+  it("trims surrounding whitespace before saving", async () => {
+    const room = await seedRoom();
+    await useAppStore.getState().renameRoom(room.id, "  Trimmed  ");
+    expect(useAppStore.getState().currentRoom!.name).toBe("Trimmed");
+  });
+
+  it("is a no-op for an empty/whitespace name (keeps the old name)", async () => {
+    const room = await seedRoom();
+    await useAppStore.getState().renameRoom(room.id, "   ");
+    expect(useAppStore.getState().currentRoom!.name).toBe("Old name");
+  });
+});
+
 describe("store — createRoom multi-room gating (issue #109, ADR-0021)", () => {
   it("refuses to create beyond the Plan's Room cap (Explorer = 1)", async () => {
     const repo = new InMemoryCanvasRepository();

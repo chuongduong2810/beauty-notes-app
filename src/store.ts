@@ -606,6 +606,19 @@ type AppState = {
    * @param presetId - a {@link ROOM_SIZE_PRESETS} id (e.g. `"grand"`).
    */
   resizeRoom: (presetId: string) => Promise<void>;
+  /**
+   * Rename the current Room (issue #133). Trims `name`; an empty result is a
+   * no-op (the old name is kept). Optimistically updates `currentRoom.name`
+   * (when it is the target) and the matching `rooms` entry, persists via
+   * `repo.updateRoomName`, and reconciles the saved row. On a write failure it
+   * keeps the typed name this session rather than snapping back — the name is
+   * cosmetic per-Room state, mirroring `resizeRoom` / `applyRoomPatch`. No-op
+   * without a current Room.
+   *
+   * @param roomId - the Room to rename (the current Room in this slice).
+   * @param name - the new name; trimmed, empties ignored.
+   */
+  renameRoom: (roomId: string, name: string) => Promise<void>;
   /** Add a furniture Catalog Item to the current Room's set (ADR-0022).
    *  Thin wrapper over `applyCustomization` for the `furniture` kind when
    *  the id is absent; a no-op if it is already applied. */
@@ -1118,6 +1131,40 @@ export const useAppStore = create<AppState>((set, get) => ({
       // snapping the Room back to its old dimensions.
       console.error(
         "updateRoomDimensions failed — keeping the chosen size this session; " +
+          "it may not survive a reload until the write succeeds.",
+        err,
+      );
+    }
+  },
+
+  renameRoom: async (roomId, name) => {
+    const { currentRoom, repo } = get();
+    if (!currentRoom) return;
+    const trimmed = name.trim();
+    if (!trimmed) return; // empty/whitespace ⇒ keep the old name.
+
+    set((s) => ({
+      currentRoom:
+        s.currentRoom?.id === roomId
+          ? { ...s.currentRoom, name: trimmed }
+          : s.currentRoom,
+      rooms: s.rooms.map((r) =>
+        r.id === roomId ? { ...r, name: trimmed } : r,
+      ),
+    }));
+    if (!repo) return;
+    try {
+      const saved = await repo.updateRoomName(roomId, trimmed);
+      set((s) => ({
+        currentRoom: s.currentRoom?.id === saved.id ? saved : s.currentRoom,
+        rooms: s.rooms.map((r) => (r.id === saved.id ? saved : r)),
+      }));
+    } catch (err) {
+      // Same graceful-degrade as resizeRoom / applyRoomPatch: the name is
+      // cosmetic per-Room state, so a write hiccup keeps the typed name this
+      // session rather than snapping back to the old one.
+      console.error(
+        "updateRoomName failed — keeping the typed name this session; " +
           "it may not survive a reload until the write succeeds.",
         err,
       );

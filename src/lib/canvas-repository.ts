@@ -80,6 +80,13 @@ export interface CanvasRepository {
     roomId: string,
     dimensions: { width_m: number; depth_m: number; height_m: number },
   ): Promise<Room>;
+  /**
+   * Persist a Room's user-editable name. The `name` column predates this
+   * feature (ADR-0008); renaming just writes a new value, returning the
+   * updated Room. The store trims and rejects empties before calling; the
+   * repo just writes whatever it is given.
+   */
+  updateRoomName(id: string, name: string): Promise<Room>;
 
   /** List every Note Pinned to any Surface of the Room, oldest first. */
   listNotes(roomId: string): Promise<Note[]>;

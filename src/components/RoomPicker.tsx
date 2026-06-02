@@ -43,6 +43,34 @@ const chevronStyle: CSSProperties = {
   opacity: 0.7,
 };
 
+const renameButtonStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 4,
+  marginLeft: 2,
+  borderRadius: 8,
+  border: "none",
+  background: "transparent",
+  color: "rgba(255,255,255,0.6)",
+  fontSize: 12,
+  lineHeight: 1,
+  cursor: "pointer",
+};
+
+const renameInputStyle: CSSProperties = {
+  border: "1px solid rgba(92, 242, 232, 0.5)",
+  borderRadius: 8,
+  background: "rgba(0, 0, 0, 0.25)",
+  color: "#fff",
+  fontSize: 13,
+  fontWeight: 500,
+  fontFamily: "inherit",
+  padding: "2px 6px",
+  width: 140,
+  outline: "none",
+};
+
 const menuStyle: CSSProperties = {
   marginTop: 6,
   minWidth: 220,
@@ -91,9 +119,18 @@ export function RoomPicker() {
   const rooms = useAppStore((s) => s.rooms);
   const switchRoom = useAppStore((s) => s.switchRoom);
   const createRoom = useAppStore((s) => s.createRoom);
+  const renameRoom = useAppStore((s) => s.renameRoom);
   const entitlements = useAppStore((s) => s.entitlements);
   const [open, setOpen] = useState(false);
+  // While renaming the current Room, holds the in-flight draft; null = idle.
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Focus + select the rename input when editing begins.
+  useEffect(() => {
+    if (renameDraft !== null) inputRef.current?.select();
+  }, [renameDraft]);
 
   // Click outside closes the dropdown.
   useEffect(() => {
@@ -116,20 +153,73 @@ export function RoomPicker() {
   const readOnly = readOnlyRoomIds(rooms, entitlements.maxRooms);
   const atCap = !canCreateRoom(rooms.length, entitlements.maxRooms);
 
+  const commitRename = () => {
+    if (renameDraft === null) return;
+    // Trim + ignore-empty is enforced by the store too; the draft is closed
+    // either way so a blank entry simply restores the old name.
+    void renameRoom(currentRoom.id, renameDraft);
+    setRenameDraft(null);
+  };
+
   return (
     <div style={containerStyle} ref={containerRef} data-testid="room-picker">
-      <button
-        type="button"
-        style={triggerStyle}
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        <span>{currentRoom.name}</span>
-        <span style={chevronStyle} aria-hidden>
-          ▾
-        </span>
-      </button>
+      <div style={{ ...triggerStyle, cursor: "default" }}>
+        {renameDraft !== null ? (
+          <input
+            ref={inputRef}
+            style={renameInputStyle}
+            value={renameDraft}
+            aria-label="Room name"
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitRename();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setRenameDraft(null); // cancel ⇒ restore old name.
+              }
+            }}
+          />
+        ) : (
+          <>
+            <button
+              type="button"
+              style={{
+                ...triggerStyle,
+                padding: 0,
+                border: "none",
+                background: "transparent",
+                boxShadow: "none",
+                cursor: "pointer",
+              }}
+              onClick={() => setOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={open}
+            >
+              <span>{currentRoom.name}</span>
+              <span style={chevronStyle} aria-hidden>
+                ▾
+              </span>
+            </button>
+            <button
+              type="button"
+              style={renameButtonStyle}
+              title="Rename room"
+              aria-label="Rename room"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen(false);
+                setRenameDraft(currentRoom.name);
+              }}
+            >
+              ✎
+            </button>
+          </>
+        )}
+      </div>
       {open && (
         <div role="menu" style={menuStyle}>
           {rooms.map((r) => {
