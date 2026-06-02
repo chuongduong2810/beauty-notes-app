@@ -25,6 +25,7 @@ import { RoomSwitchingOverlay } from "./components/RoomSwitchingOverlay";
 import { SearchOverlay } from "./components/SearchOverlay";
 import { CheckoutModal } from "./components/CheckoutModal";
 import { ToolPalette } from "./components/ToolPalette";
+import { CustomizationPanel } from "./components/CustomizationPanel";
 import { getAuthIntent } from "./lib/auth-intent";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
@@ -602,6 +603,10 @@ export function App() {
       <NoteEditor />
       <RoomPicker />
       <ToolPalette />
+      {/* In-room Customization browser + premium discovery (issue #108).
+          Applies Catalog Items live to the Room; locked Items nudge toward
+          Membership without blocking note-taking (ADR-0022). */}
+      <CustomizationPanel />
       <SearchOverlay flyToNote={flyToNote} />
       <RoomSwitchingOverlay />
       <CheckoutModal />

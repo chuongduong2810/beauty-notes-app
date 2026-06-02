@@ -544,6 +544,18 @@ type AppState = {
    */
   customizationRefused: boolean;
   /**
+   * One-shot signal that the User asked to reach Membership from somewhere
+   * outside the Notebook — the in-room Customization panel's premium-discovery
+   * nudge (issue #108). The Notebook watches this and gently opens itself on
+   * the Membership page (mirroring the claim/restore/recover auto-reveals),
+   * then clears it. No popup; note-taking is never blocked (ADR-0022).
+   */
+  membershipRequested: boolean;
+  /** Raise the {@link membershipRequested} one-shot (the nudge's link). */
+  requestMembership: () => void;
+  /** Clear the {@link membershipRequested} one-shot once consumed. */
+  clearMembershipRequest: () => void;
+  /**
    * Apply a Catalog Item to the current Room (ADR-0022, issue #107). Looks
    * the Item up by id; if it is LOCKED for the current entitlements the call
    * is refused — nothing is persisted and `customizationRefused` is set (the
@@ -619,6 +631,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   recovering: false,
 
   customizationRefused: false,
+  membershipRequested: false,
 
   currentRoom: null,
   rooms: [],
@@ -983,6 +996,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     await applyRoomPatch(patch);
   },
+
+  requestMembership: () => set({ membershipRequested: true }),
+
+  clearMembershipRequest: () => set({ membershipRequested: false }),
 
   addFurniture: async (itemId) => {
     await get().applyCustomization("furniture", itemId);
