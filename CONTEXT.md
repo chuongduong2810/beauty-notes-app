@@ -78,7 +78,7 @@ The skyline backdrop seen through a Window. It lives *outside* the Room's bounda
 _Avoid_: World, environment, skybox, background, scene
 
 **Weather**:
-The ambient, always-rainy mood of the City: falling rain outside the Window, rain streaks on the glass, and overcast light spilling into the Room. Weather is a fixed atmosphere, not user-configurable state and not persisted — there is one mood (calm rain), no forecast, no time-of-day. It is the baseline beneath the customizable **Ambience** layer (ADR-0022): Ambience is chosen by the User, Weather is not.
+The ambient, always-rainy mood of the City: falling rain outside the Window, rain streaks on the glass, overcast light spilling into the Room, and an optional ambient **soundscape**. Weather is a fixed atmosphere — one mood (calm rain), no forecast, no time-of-day — and is not persisted. Its single User-controllable facet is the soundscape: off by default, the User may switch it on and pick one of a few looping ambient tracks (the on/off state and chosen track are session-only, never stored — ADR-0024). Everything else about Weather is non-configurable. The falling rain is rendered by a particle engine (three.quarks, ADR-0024) confined to a slab beyond the Room boundary so it reads only through the Window. Weather is the baseline beneath the customizable, persisted **Ambience** layer (ADR-0022): Ambience is a premium choice layered on top, Weather is the free default.
 _Avoid_: Climate, forecast, conditions
 
 **Notebook**:
