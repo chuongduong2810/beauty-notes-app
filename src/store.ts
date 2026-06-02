@@ -737,6 +737,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!currentRoom || typeof window === "undefined") return;
     set({ claimStatus: "sending", claimError: null });
     try {
+      // Record the intent BEFORE sending so the magic-link return (which
+      // fires the same onAuthStateChange as Restore) is handled as a
+      // Claim — popping the ownership certificate — not a stray sign-in
+      // (ADR-0019).
+      setAuthIntent("claim");
       const { error } = await supabase.auth.updateUser(
         { email, password },
         {

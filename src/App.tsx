@@ -29,7 +29,7 @@ import { ToolPalette } from "./components/ToolPalette";
 import { CustomizationPanel } from "./components/CustomizationPanel";
 import { AmbientAudio } from "./components/AmbientAudio";
 import { AudioControl } from "./components/AudioControl";
-import { getAuthIntent } from "./lib/auth-intent";
+import { clearAuthIntent, getAuthIntent } from "./lib/auth-intent";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
 import { focusPose } from "./lib/focus-pose";
@@ -390,10 +390,19 @@ export function App() {
       const user = session?.user;
       if (!user || !user.email || user.is_anonymous) return;
       setSession(session);
-      if (getAuthIntent() === "restore") {
+      // Branch explicitly on the persisted intent. The "claimed" state used
+      // to be the catch-all `else`, so it fired for ANY permanent sign-in —
+      // a token refresh, the restoreWithPassword guest-cleanup session swap,
+      // or a plain reload — spuriously popping the certificate over the
+      // restore room picker (issue #131). Now only an explicit "claim"
+      // intent reveals the certificate; everything else just adopts the
+      // session above and does nothing more.
+      const intent = getAuthIntent();
+      if (intent === "restore") {
         void useAppStore.getState().completeRestore();
-      } else {
+      } else if (intent === "claim") {
         useAppStore.setState({ claimStatus: "claimed" });
+        clearAuthIntent();
       }
     });
     return () => data.subscription.unsubscribe();
