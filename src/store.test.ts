@@ -116,6 +116,16 @@ describe("store — claimRoom / resetClaim (issue #70)", () => {
     );
   });
 
+  it("records the 'claim' auth-intent before sending (issue #131)", async () => {
+    window.localStorage.clear();
+    updateUser.mockResolvedValue({ data: {}, error: null });
+    useAppStore.setState({ currentRoom: makeRoom() });
+
+    await useAppStore.getState().claimRoom("ada@example.com", "hunter2!secret");
+
+    expect(window.localStorage.getItem("bn.auth-intent")).toBe("claim");
+  });
+
   it("flips to error with a message when the update fails", async () => {
     updateUser.mockResolvedValue({ data: {}, error: new Error("rate limited") });
     useAppStore.setState({ currentRoom: makeRoom() });
