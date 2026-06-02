@@ -297,6 +297,17 @@ export class InMemoryCanvasRepository implements CanvasRepository {
     return updated;
   }
 
+  async updateRoomName(id: string, name: string): Promise<Room> {
+    let updated: Room | null = null;
+    this.rooms = this.rooms.map((r) => {
+      if (r.id !== id) return r;
+      updated = { ...r, name, updated_at: new Date().toISOString() };
+      return updated;
+    });
+    if (!updated) throw new Error(`updateRoomName: no Room with id ${id}`);
+    return updated;
+  }
+
   async updateRoomCustomization(
     roomId: string,
     patch: RoomCustomizationPatch,

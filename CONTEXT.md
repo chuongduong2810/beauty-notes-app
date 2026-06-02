@@ -7,7 +7,7 @@ The pre-release v1 (a flat "Canvas" plane with depth slots) was abandoned before
 ## Language
 
 **Room**:
-A bounded 3D environment owned by one User — 6 m × 6 m × 3 m by default. Contains exactly six Surfaces. A User has many Rooms and switches between them. (See ADR-0008.)
+A bounded 3D environment owned by one User — 6 m × 6 m × 3 m by default. Contains exactly six Surfaces. A User has many Rooms and switches between them. Has a user-editable name (shown in the RoomPicker and Room Ledger; renamed inline from the RoomPicker). (See ADR-0008.)
 _Avoid_: World, scene, level, environment
 
 **Surface**:
