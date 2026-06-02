@@ -27,6 +27,8 @@ import { SearchOverlay } from "./components/SearchOverlay";
 import { CheckoutModal } from "./components/CheckoutModal";
 import { ToolPalette } from "./components/ToolPalette";
 import { CustomizationPanel } from "./components/CustomizationPanel";
+import { AmbientAudio } from "./components/AmbientAudio";
+import { AudioControl } from "./components/AudioControl";
 import { getAuthIntent } from "./lib/auth-intent";
 import { bootstrapSessionAndRoom } from "./lib/bootstrap";
 import { DebouncedSaver } from "./lib/debounced-saver";
@@ -630,6 +632,12 @@ export function App() {
           Applies Catalog Items live to the Room; locked Items nudge toward
           Membership without blocking note-taking (ADR-0022). */}
       <CustomizationPanel />
+      {/* Ambient soundscape (issue #128, ADR-0024): the single user-toggled
+          facet of the fixed Weather. AmbientAudio is the headless playback
+          driver; AudioControl is the bottom-right speaker + track selector.
+          Session-only, off by default, free. */}
+      <AmbientAudio />
+      <AudioControl />
       <SearchOverlay flyToNote={flyToNote} />
       <RoomSwitchingOverlay />
       <CheckoutModal />
