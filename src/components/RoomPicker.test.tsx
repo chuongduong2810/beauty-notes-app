@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InMemoryCanvasRepository } from "../lib/in-memory-canvas-repository";
 import { entitlementsForTier } from "../lib/entitlements";
 import { useAppStore } from "../store";
@@ -76,6 +76,34 @@ describe("RoomPicker — top-left dropdown (issue #22)", () => {
     const state = useAppStore.getState();
     expect(state.rooms.length).toBe(3);
     expect(state.currentRoom?.name).toBe("Untitled");
+  });
+
+  it("re-selects the rename input only once, not on every keystroke (regression: could not type past one char)", async () => {
+    await seedTwoRooms();
+    const selectSpy = vi.spyOn(HTMLInputElement.prototype, "select");
+    render(<RoomPicker />);
+    // Enter rename mode — the focus effect selects the field once here.
+    fireEvent.click(screen.getByRole("button", { name: /rename room/i }));
+    const input = screen.getByLabelText("Room name");
+    selectSpy.mockClear(); // ignore the one-time select on entering rename
+    // Subsequent keystrokes must NOT re-trigger select() — otherwise the
+    // field is re-selected each time and the next char overwrites it.
+    fireEvent.change(input, { target: { value: "Studio A" } });
+    fireEvent.change(input, { target: { value: "Studio AB" } });
+    expect(selectSpy).not.toHaveBeenCalled();
+    expect((input as HTMLInputElement).value).toBe("Studio AB");
+    selectSpy.mockRestore();
+  });
+
+  it("commits the typed name on Enter via renameRoom", async () => {
+    await seedTwoRooms();
+    render(<RoomPicker />);
+    fireEvent.click(screen.getByRole("button", { name: /rename room/i }));
+    const input = screen.getByLabelText("Room name");
+    fireEvent.change(input, { target: { value: "Renamed Studio" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(useAppStore.getState().currentRoom?.name).toBe("Renamed Studio");
   });
 
   it("at the Explorer Room cap, shows a Studio nudge instead of '+ New Room'", async () => {
