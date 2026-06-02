@@ -114,6 +114,17 @@ export function supabaseCanvasRepository(
       return data as Room;
     },
 
+    async updateRoomDimensions(roomId, { width_m, depth_m, height_m }) {
+      const { data, error } = await supabase
+        .from("rooms")
+        .update({ width_m, depth_m, height_m })
+        .eq("id", roomId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Room;
+    },
+
     async listNotes(roomId) {
       // Notes are referenced by surface_id; join surfaces to filter by Room.
       const { data, error } = await supabase

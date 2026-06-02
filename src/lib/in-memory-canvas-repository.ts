@@ -281,6 +281,22 @@ export class InMemoryCanvasRepository implements CanvasRepository {
     return updated;
   }
 
+  async updateRoomDimensions(
+    roomId: string,
+    dimensions: { width_m: number; depth_m: number; height_m: number },
+  ): Promise<Room> {
+    let updated: Room | null = null;
+    this.rooms = this.rooms.map((r) => {
+      if (r.id !== roomId) return r;
+      updated = { ...r, ...dimensions, updated_at: new Date().toISOString() };
+      return updated;
+    });
+    if (!updated) {
+      throw new Error(`updateRoomDimensions: no Room with id ${roomId}`);
+    }
+    return updated;
+  }
+
   async updateRoomCustomization(
     roomId: string,
     patch: RoomCustomizationPatch,

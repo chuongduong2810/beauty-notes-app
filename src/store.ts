@@ -43,6 +43,7 @@ import {
   type CatalogKind,
 } from "./lib/catalog";
 import { canCreateRoom } from "./lib/room-access";
+import { roomSizePresetById } from "./lib/room-size";
 import type { RoomCustomizationPatch } from "./lib/canvas-repository";
 import type { Annotation, Stroke, StrokePoint } from "./lib/stroke";
 
@@ -569,6 +570,18 @@ type AppState = {
    * @param itemId - the Catalog Item id to apply.
    */
   applyCustomization: (kind: CatalogKind, itemId: string) => Promise<void>;
+  /**
+   * Resize the current Room to a curated size preset (room resize, a Studio
+   * Entitlement). Refuses below Studio — nothing is persisted and
+   * `customizationRefused` is set so the in-room nudge has a seam to read,
+   * mirroring `applyCustomization`. For a Studio member it optimistically
+   * updates the Room's `width_m/depth_m/height_m` (the render layer reads
+   * these live), persists via the repo, and reconciles / rolls back. No-op on
+   * an unknown preset id or without a current Room.
+   *
+   * @param presetId - a {@link ROOM_SIZE_PRESETS} id (e.g. `"grand"`).
+   */
+  resizeRoom: (presetId: string) => Promise<void>;
   /** Add a furniture Catalog Item to the current Room's set (ADR-0022).
    *  Thin wrapper over `applyCustomization` for the `furniture` kind when
    *  the id is absent; a no-op if it is already applied. */
@@ -1000,6 +1013,47 @@ export const useAppStore = create<AppState>((set, get) => ({
   requestMembership: () => set({ membershipRequested: true }),
 
   clearMembershipRequest: () => set({ membershipRequested: false }),
+
+  resizeRoom: async (presetId) => {
+    const { currentRoom, entitlements, repo } = get();
+    if (!currentRoom) return;
+    const preset = roomSizePresetById(presetId);
+    if (!preset) return; // unknown id ⇒ ignore (authoring guard).
+
+    // Room resize is a Studio Entitlement (advancedCustomization). Refuse
+    // below it — nothing persisted; the in-room nudge reads customizationRefused.
+    if (!entitlements.advancedCustomization) {
+      set({ customizationRefused: true });
+      return;
+    }
+
+    const dimensions = {
+      width_m: preset.width_m,
+      depth_m: preset.depth_m,
+      height_m: preset.height_m,
+    };
+    const previous = currentRoom;
+    const optimistic: Room = { ...currentRoom, ...dimensions };
+    set((s) => ({
+      customizationRefused: false,
+      currentRoom: optimistic,
+      rooms: s.rooms.map((r) => (r.id === optimistic.id ? optimistic : r)),
+    }));
+    if (!repo) return;
+    try {
+      const saved = await repo.updateRoomDimensions(previous.id, dimensions);
+      set((s) => ({
+        currentRoom: s.currentRoom?.id === saved.id ? saved : s.currentRoom,
+        rooms: s.rooms.map((r) => (r.id === saved.id ? saved : r)),
+      }));
+    } catch (err) {
+      console.warn("updateRoomDimensions failed; rolling back", err);
+      set((s) => ({
+        currentRoom: s.currentRoom?.id === previous.id ? previous : s.currentRoom,
+        rooms: s.rooms.map((r) => (r.id === previous.id ? previous : r)),
+      }));
+    }
+  },
 
   addFurniture: async (itemId) => {
     await get().applyCustomization("furniture", itemId);

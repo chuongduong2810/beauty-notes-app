@@ -5,6 +5,10 @@ import {
   type CustomizationGroup,
 } from "../lib/customization-browser";
 import { defaultItemFor, type CatalogItem, type CatalogKind } from "../lib/catalog";
+import {
+  ROOM_SIZE_PRESETS,
+  appliedRoomSizePresetId,
+} from "../lib/room-size";
 
 /**
  * In-room Customization browser (issue #108, ADR-0022). A chrome affordance
@@ -162,12 +166,13 @@ export function CustomizationPanel() {
   const applyCustomization = useAppStore((s) => s.applyCustomization);
   const addFurniture = useAppStore((s) => s.addFurniture);
   const removeFurniture = useAppStore((s) => s.removeFurniture);
+  const resizeRoom = useAppStore((s) => s.resizeRoom);
   const requestMembership = useAppStore((s) => s.requestMembership);
 
   const [open, setOpen] = useState(false);
-  // The locked Item the User most recently tapped — drives the inline
-  // premium-discovery nudge. Null when no nudge is showing.
-  const [nudgeItem, setNudgeItem] = useState<CatalogItem | null>(null);
+  // The label of the locked look/size the User most recently tapped — drives
+  // the inline premium-discovery nudge. Null when no nudge is showing.
+  const [nudgeLabel, setNudgeLabel] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Click outside closes the panel (and any open nudge).
@@ -177,7 +182,7 @@ export function CustomizationPanel() {
       const node = containerRef.current;
       if (node && !node.contains(e.target as Node)) {
         setOpen(false);
-        setNudgeItem(null);
+        setNudgeLabel(null);
       }
     };
     document.addEventListener("pointerdown", onDocPointer);
@@ -193,7 +198,7 @@ export function CustomizationPanel() {
 
   /** Apply (or toggle) an unlocked Item; clears any showing nudge. */
   const applyItem = (kind: CatalogKind, item: CatalogItem, applied: boolean) => {
-    setNudgeItem(null);
+    setNudgeLabel(null);
     if (kind === "furniture") {
       // Furniture is an additive set: toggle membership. The free "Bare Room"
       // default represents the empty set, so applying it clears all furniture.
@@ -209,11 +214,17 @@ export function CustomizationPanel() {
     void applyCustomization(kind, item.id);
   };
 
+  // Room resize is a Studio Entitlement (advancedCustomization). The size
+  // presets stay visible for everyone with a lock; tapping one below Studio
+  // nudges toward Membership rather than blocking.
+  const resizeLocked = !entitlements.advancedCustomization;
+  const appliedSizeId = appliedRoomSizePresetId(currentRoom);
+
   /** Route the premium-discovery nudge's link to the Membership page. */
   const goToMembership = () => {
     requestMembership();
     setOpen(false);
-    setNudgeItem(null);
+    setNudgeLabel(null);
   };
 
   return (
@@ -228,7 +239,7 @@ export function CustomizationPanel() {
               style={{ ...chipBase, padding: "2px 8px" }}
               onClick={() => {
                 setOpen(false);
-                setNudgeItem(null);
+                setNudgeLabel(null);
               }}
             >
               ×
@@ -255,7 +266,7 @@ export function CustomizationPanel() {
                     }}
                     onClick={() =>
                       locked
-                        ? setNudgeItem(item)
+                        ? setNudgeLabel(item.label)
                         : applyItem(group.kind, item, applied)
                     }
                   >
@@ -268,11 +279,44 @@ export function CustomizationPanel() {
             </div>
           ))}
 
-          {nudgeItem && (
+          {/* Room Size — resizing is a Studio Entitlement (room resize). The
+              presets stay visible with a lock below Studio; tapping one nudges
+              toward Membership rather than blocking (premium discovery). */}
+          <div>
+            <p style={groupTitleStyle}>Room Size</p>
+            <div style={chipRowStyle}>
+              {ROOM_SIZE_PRESETS.map((preset) => {
+                const applied = preset.id === appliedSizeId;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    aria-pressed={applied}
+                    title={preset.blurb}
+                    style={{
+                      ...chipBase,
+                      ...(applied ? chipApplied : null),
+                      ...(resizeLocked ? chipLocked : null),
+                    }}
+                    onClick={() =>
+                      resizeLocked
+                        ? setNudgeLabel(`The ${preset.label} room`)
+                        : (setNudgeLabel(null), void resizeRoom(preset.id))
+                    }
+                  >
+                    <span>{preset.label}</span>
+                    {resizeLocked && <span aria-hidden>🔒</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {nudgeLabel && (
             <div style={nudgeStyle} role="note">
               <span>
-                <strong>{nudgeItem.label}</strong> is part of a Membership.
-                Nothing changes here until you choose to upgrade.
+                <strong>{nudgeLabel}</strong> is part of a Membership. Nothing
+                changes here until you choose to upgrade.
               </span>
               <br />
               <button type="button" style={nudgeLinkStyle} onClick={goToMembership}>

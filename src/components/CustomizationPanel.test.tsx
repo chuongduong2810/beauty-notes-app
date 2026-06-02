@@ -75,4 +75,26 @@ describe("CustomizationPanel (issue #108)", () => {
     );
     expect(useAppStore.getState().membershipRequested).toBe(true);
   });
+
+  it("resizes the Room when a Studio member picks a size preset", async () => {
+    await seedRoom("studio");
+    render(<CustomizationPanel />);
+    openPanel();
+    fireEvent.click(screen.getByRole("button", { name: /grand/i }));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(useAppStore.getState().currentRoom?.width_m).toBe(8);
+  });
+
+  it("does not resize for a non-Studio member and shows the Membership nudge", async () => {
+    await seedRoom("resident");
+    render(<CustomizationPanel />);
+    openPanel();
+    const beforeWidth = useAppStore.getState().currentRoom?.width_m;
+    fireEvent.click(screen.getByRole("button", { name: /grand/i }));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(useAppStore.getState().currentRoom?.width_m).toBe(beforeWidth);
+    expect(
+      screen.getByRole("button", { name: /unlock with membership/i }),
+    ).toBeInTheDocument();
+  });
 });
