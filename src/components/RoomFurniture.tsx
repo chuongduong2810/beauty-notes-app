@@ -27,6 +27,100 @@ const LEAF_A = "#3a5f3a";
 const LEAF_B = "#4a6f4a";
 const LEAF_C = "#2a4f2a";
 
+// Catalog furniture-set palette (issue #108 rendering).
+const RUG = "#7c4a52";
+const RUG_TRIM = "#9a626a";
+const CHAIR = "#6a5b8a";
+const STOOL = "#cdbfa6";
+const EASEL = "#5b4630";
+const CANVAS = "#efe7d6";
+
+/**
+ * Render the premium Catalog furniture Sets applied to the current Room
+ * (ADR-0022, issue #108). Furniture is an additive set of Catalog ids on the
+ * Room; each applied Set draws as a small primitive arrangement in the open
+ * floor (clear of the fixed desk/lamp/plant/notebook). A Room with no
+ * furniture renders nothing, so the default look is unchanged.
+ */
+function CatalogFurniture() {
+  const furniture = useAppStore((s) => s.currentRoom?.furniture);
+  const set = furniture ?? [];
+  return (
+    <group>
+      {/* Cozy Set — a round rug + a soft armchair. */}
+      {set.includes("cozy-set") && (
+        <group>
+          <mesh receiveShadow position={[0, 0.006, 0.7]}>
+            <cylinderGeometry args={[1.1, 1.1, 0.012, 32]} />
+            <meshStandardMaterial color={RUG} roughness={0.95} />
+          </mesh>
+          <mesh receiveShadow position={[0, 0.008, 0.7]}>
+            <cylinderGeometry args={[0.78, 0.78, 0.012, 32]} />
+            <meshStandardMaterial color={RUG_TRIM} roughness={0.95} />
+          </mesh>
+          <group position={[1.5, 0, 1.0]} rotation={[0, -0.6, 0]}>
+            <mesh castShadow receiveShadow position={[0, 0.24, 0]}>
+              <boxGeometry args={[0.62, 0.18, 0.58]} />
+              <meshStandardMaterial color={CHAIR} roughness={0.85} />
+            </mesh>
+            <mesh castShadow position={[0, 0.5, -0.24]}>
+              <boxGeometry args={[0.62, 0.5, 0.12]} />
+              <meshStandardMaterial color={CHAIR} roughness={0.85} />
+            </mesh>
+          </group>
+        </group>
+      )}
+
+      {/* Minimal Set — a low cube stool + a slim side table. */}
+      {set.includes("minimal-set") && (
+        <group position={[-1.5, 0, 1.0]}>
+          <mesh castShadow receiveShadow position={[0, 0.2, 0]}>
+            <boxGeometry args={[0.4, 0.4, 0.4]} />
+            <meshStandardMaterial color={STOOL} roughness={0.8} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[0.7, 0.45, 0]}>
+            <boxGeometry args={[0.5, 0.03, 0.5]} />
+            <meshStandardMaterial color={WOOD} roughness={0.8} />
+          </mesh>
+          {[
+            [-0.2, -0.2] as const,
+            [0.2, -0.2] as const,
+            [-0.2, 0.2] as const,
+            [0.2, 0.2] as const,
+          ].map(([dx, dz]) => (
+            <mesh key={`${dx},${dz}`} castShadow position={[0.7 + dx, 0.22, dz]}>
+              <boxGeometry args={[0.03, 0.44, 0.03]} />
+              <meshStandardMaterial color={WOOD_DARK} roughness={0.85} />
+            </mesh>
+          ))}
+        </group>
+      )}
+
+      {/* Studio Suite — a painter's easel with a blank canvas. */}
+      {set.includes("studio-set") && (
+        <group position={[1.7, 0, 0.1]} rotation={[0, -1.1, 0]}>
+          <mesh castShadow position={[-0.28, 0.7, 0.1]} rotation={[0.18, 0, 0.12]}>
+            <boxGeometry args={[0.04, 1.4, 0.04]} />
+            <meshStandardMaterial color={EASEL} roughness={0.8} />
+          </mesh>
+          <mesh castShadow position={[0.28, 0.7, 0.1]} rotation={[0.18, 0, -0.12]}>
+            <boxGeometry args={[0.04, 1.4, 0.04]} />
+            <meshStandardMaterial color={EASEL} roughness={0.8} />
+          </mesh>
+          <mesh castShadow position={[0, 0.4, -0.18]} rotation={[-0.25, 0, 0]}>
+            <boxGeometry args={[0.04, 1.3, 0.04]} />
+            <meshStandardMaterial color={EASEL} roughness={0.8} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[0, 0.85, 0.14]} rotation={[0.18, 0, 0]}>
+            <boxGeometry args={[0.7, 0.55, 0.03]} />
+            <meshStandardMaterial color={CANVAS} roughness={0.9} />
+          </mesh>
+        </group>
+      )}
+    </group>
+  );
+}
+
 export function RoomFurniture() {
   const currentTool = useAppStore((s) => s.penState.currentTool);
   const setCurrentTool = useAppStore((s) => s.setCurrentTool);
@@ -163,6 +257,9 @@ export function RoomFurniture() {
           <meshStandardMaterial color={LEAF_C} roughness={0.9} metalness={0} />
         </mesh>
       </group>
+
+      {/* Premium Catalog furniture Sets applied to the Room (issue #108). */}
+      <CatalogFurniture />
     </group>
   );
 }

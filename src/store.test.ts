@@ -5,6 +5,7 @@ import { InMemoryCanvasRepository } from "./lib/in-memory-canvas-repository";
 import type { Note, Room } from "./lib/room";
 import { entitlementsForTier } from "./lib/entitlements";
 import { catalogByKind } from "./lib/catalog";
+import { roomSizePresetById } from "./lib/room-size";
 
 // Mock the Supabase client so claimRoom's `updateUser` (issue #70),
 // sendRestoreLink's `signInWithOtp` (issue #82) and restoreWithPassword's
@@ -742,6 +743,42 @@ describe("store — applyCustomization (issue #107, ADR-0022)", () => {
     await seedRoom("explorer");
     await useAppStore.getState().applyCustomization("theme", premiumTheme.id);
     expect(useAppStore.getState().currentRoom?.theme_id ?? null).toBeNull();
+    expect(useAppStore.getState().customizationRefused).toBe(true);
+  });
+});
+
+describe("store — resizeRoom (Studio room resize)", () => {
+  const grand = roomSizePresetById("grand")!;
+
+  async function seedRoom(tier: "resident" | "studio") {
+    const repo = new InMemoryCanvasRepository();
+    const room = await repo.insertRoom("u1", "Room");
+    useAppStore.setState({
+      repo,
+      session: { user: { id: "u1" } } as never,
+      currentRoom: room,
+      rooms: [room],
+      entitlements: entitlementsForTier(tier),
+      customizationRefused: false,
+    } as never);
+    return room;
+  }
+
+  it("resizes the Room for a Studio member and persists the new dimensions", async () => {
+    await seedRoom("studio");
+    await useAppStore.getState().resizeRoom("grand");
+    const room = useAppStore.getState().currentRoom!;
+    expect(room.width_m).toBe(grand.width_m);
+    expect(room.depth_m).toBe(grand.depth_m);
+    expect(room.height_m).toBe(grand.height_m);
+    expect(useAppStore.getState().customizationRefused).toBe(false);
+  });
+
+  it("refuses to resize below Studio (no persistence) and flags the nudge seam", async () => {
+    const before = await seedRoom("resident");
+    await useAppStore.getState().resizeRoom("grand");
+    const room = useAppStore.getState().currentRoom!;
+    expect(room.width_m).toBe(before.width_m);
     expect(useAppStore.getState().customizationRefused).toBe(true);
   });
 });

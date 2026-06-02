@@ -43,6 +43,7 @@ import {
   type CatalogKind,
 } from "./lib/catalog";
 import { canCreateRoom } from "./lib/room-access";
+import { roomSizePresetById } from "./lib/room-size";
 import type { RoomCustomizationPatch } from "./lib/canvas-repository";
 import type { Annotation, Stroke, StrokePoint } from "./lib/stroke";
 
@@ -176,12 +177,17 @@ async function applyRoomPatch(patch: RoomCustomizationPatch): Promise<void> {
       rooms: s.rooms.map((r) => (r.id === saved.id ? saved : r)),
     }));
   } catch (err) {
-    console.warn("updateRoomCustomization failed; rolling back", err);
-    useAppStore.setState((s) => ({
-      currentRoom:
-        s.currentRoom?.id === previous.id ? previous : s.currentRoom,
-      rooms: s.rooms.map((r) => (r.id === previous.id ? previous : r)),
-    }));
+    // Customization is non-destructive, per-Room *cosmetic* state. A write
+    // hiccup (transient network, an un-migrated DB column, a stale JWT) must
+    // NOT yank the User back to the default look — that reads as "my choice
+    // snapped back". So we KEEP the optimistic value (the look the User picked
+    // stays applied this session) and surface the failure loudly for ops,
+    // rather than rolling back. It re-persists on the next successful write.
+    console.error(
+      "updateRoomCustomization failed — keeping the applied look this " +
+        "session; it may not survive a reload until the write succeeds.",
+      err,
+    );
   }
 }
 
@@ -544,6 +550,18 @@ type AppState = {
    */
   customizationRefused: boolean;
   /**
+   * One-shot signal that the User asked to reach Membership from somewhere
+   * outside the Notebook — the in-room Customization panel's premium-discovery
+   * nudge (issue #108). The Notebook watches this and gently opens itself on
+   * the Membership page (mirroring the claim/restore/recover auto-reveals),
+   * then clears it. No popup; note-taking is never blocked (ADR-0022).
+   */
+  membershipRequested: boolean;
+  /** Raise the {@link membershipRequested} one-shot (the nudge's link). */
+  requestMembership: () => void;
+  /** Clear the {@link membershipRequested} one-shot once consumed. */
+  clearMembershipRequest: () => void;
+  /**
    * Apply a Catalog Item to the current Room (ADR-0022, issue #107). Looks
    * the Item up by id; if it is LOCKED for the current entitlements the call
    * is refused — nothing is persisted and `customizationRefused` is set (the
@@ -557,6 +575,18 @@ type AppState = {
    * @param itemId - the Catalog Item id to apply.
    */
   applyCustomization: (kind: CatalogKind, itemId: string) => Promise<void>;
+  /**
+   * Resize the current Room to a curated size preset (room resize, a Studio
+   * Entitlement). Refuses below Studio — nothing is persisted and
+   * `customizationRefused` is set so the in-room nudge has a seam to read,
+   * mirroring `applyCustomization`. For a Studio member it optimistically
+   * updates the Room's `width_m/depth_m/height_m` (the render layer reads
+   * these live), persists via the repo, and reconciles / rolls back. No-op on
+   * an unknown preset id or without a current Room.
+   *
+   * @param presetId - a {@link ROOM_SIZE_PRESETS} id (e.g. `"grand"`).
+   */
+  resizeRoom: (presetId: string) => Promise<void>;
   /** Add a furniture Catalog Item to the current Room's set (ADR-0022).
    *  Thin wrapper over `applyCustomization` for the `furniture` kind when
    *  the id is absent; a no-op if it is already applied. */
@@ -619,6 +649,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   recovering: false,
 
   customizationRefused: false,
+  membershipRequested: false,
 
   currentRoom: null,
   rooms: [],
@@ -982,6 +1013,54 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     await applyRoomPatch(patch);
+  },
+
+  requestMembership: () => set({ membershipRequested: true }),
+
+  clearMembershipRequest: () => set({ membershipRequested: false }),
+
+  resizeRoom: async (presetId) => {
+    const { currentRoom, entitlements, repo } = get();
+    if (!currentRoom) return;
+    const preset = roomSizePresetById(presetId);
+    if (!preset) return; // unknown id ⇒ ignore (authoring guard).
+
+    // Room resize is a Studio Entitlement (advancedCustomization). Refuse
+    // below it — nothing persisted; the in-room nudge reads customizationRefused.
+    if (!entitlements.advancedCustomization) {
+      set({ customizationRefused: true });
+      return;
+    }
+
+    const dimensions = {
+      width_m: preset.width_m,
+      depth_m: preset.depth_m,
+      height_m: preset.height_m,
+    };
+    const previous = currentRoom;
+    const optimistic: Room = { ...currentRoom, ...dimensions };
+    set((s) => ({
+      customizationRefused: false,
+      currentRoom: optimistic,
+      rooms: s.rooms.map((r) => (r.id === optimistic.id ? optimistic : r)),
+    }));
+    if (!repo) return;
+    try {
+      const saved = await repo.updateRoomDimensions(previous.id, dimensions);
+      set((s) => ({
+        currentRoom: s.currentRoom?.id === saved.id ? saved : s.currentRoom,
+        rooms: s.rooms.map((r) => (r.id === saved.id ? saved : r)),
+      }));
+    } catch (err) {
+      // Same graceful-degrade as applyRoomPatch: resizing is cosmetic per-Room
+      // state, so a write hiccup keeps the chosen size this session rather than
+      // snapping the Room back to its old dimensions.
+      console.error(
+        "updateRoomDimensions failed — keeping the chosen size this session; " +
+          "it may not survive a reload until the write succeeds.",
+        err,
+      );
+    }
   },
 
   addFurniture: async (itemId) => {

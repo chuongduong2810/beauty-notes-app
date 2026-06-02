@@ -70,6 +70,16 @@ export interface CanvasRepository {
     roomId: string,
     patch: RoomCustomizationPatch,
   ): Promise<Room>;
+  /**
+   * Persist a Room's physical dimensions (room resize, a Studio Entitlement).
+   * The `width_m/depth_m/height_m` columns predate this feature (ADR-0008);
+   * resizing just writes new values, which the render layer already reads.
+   * The store gates this on entitlements before calling; the repo just writes.
+   */
+  updateRoomDimensions(
+    roomId: string,
+    dimensions: { width_m: number; depth_m: number; height_m: number },
+  ): Promise<Room>;
 
   /** List every Note Pinned to any Surface of the Room, oldest first. */
   listNotes(roomId: string): Promise<Note[]>;

@@ -102,6 +102,10 @@ function useRestoreStore<T>(selector: (slice: RestoreStoreSlice) => T): T {
 type MembershipStoreSlice = {
   membership: Membership;
   refreshMembership: () => Promise<void>;
+  /** One-shot from the in-room Customization panel asking to open the
+   *  Membership page (issue #108); consumed and cleared by the auto-reveal. */
+  membershipRequested: boolean;
+  clearMembershipRequest: () => void;
 };
 
 /** Read the membership slice off the store with the contract types. */
@@ -1365,6 +1369,21 @@ export function Notebook({
       setView("recover");
     }
   }, [recovering]);
+
+  // Auto-reveal on a Membership nudge from the in-room Customization panel
+  // (issue #108, ADR-0022): tapping a locked Item raises `membershipRequested`
+  // on the store; open the book straight to the Membership page (gently — no
+  // popup), then clear the one-shot. Mirrors the claim/restore/recover reveals.
+  const membershipRequested = useMembershipStore((s) => s.membershipRequested);
+  const clearMembershipRequest = useMembershipStore(
+    (s) => s.clearMembershipRequest,
+  );
+  useEffect(() => {
+    if (!membershipRequested) return;
+    setOpen(true);
+    setView("membership");
+    clearMembershipRequest();
+  }, [membershipRequested, clearMembershipRequest]);
 
   // Escape closes the open book.
   useEffect(() => {
